@@ -110,6 +110,32 @@ python community_simulation.py --platform twitter --num-agents 10 --extra-commen
 
 ---
 
+**五、社区可视化（前端）**
+
+可视化页面会读取 `community_simulation.db` 导出的 `data.json`。
+
+1) 导出数据
+```bash
+python /home/boris/workspace/oasis/community_viewer/export.py \
+  --db /home/boris/workspace/oasis/community_simulation.db \
+  --out /home/boris/workspace/oasis/community_viewer/data.json
+```
+
+2) 启动本地静态服务
+```bash
+cd /home/boris/workspace/oasis/community_viewer
+python -m http.server 8001
+```
+
+3) 浏览器打开
+```
+http://localhost:8001
+```
+
+如需更新数据，重新执行第 1 步即可。
+
+---
+
 **五、常见问题**
 
 1. **KV Cache 不够**  

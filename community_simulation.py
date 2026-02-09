@@ -193,6 +193,10 @@ async def main():
                         default=int(os.environ.get("OASIS_TOPICS_NUM", "3")))
     parser.add_argument("--topics-seed", type=int,
                         default=int(os.environ.get("OASIS_TOPICS_SEED", "42")))
+    parser.add_argument("--topics-mode", choices=["initial", "per-round"],
+                        default=os.environ.get("OASIS_TOPICS_MODE", "initial"))
+    parser.add_argument("--topics-per-round", type=int,
+                        default=int(os.environ.get("OASIS_TOPICS_PER_ROUND", "3")))
     parser.add_argument("--extra-comments", action="store_true",
                         default=os.environ.get("OASIS_EXTRA_COMMENTS", "") not in ("", "0", "false", "False"))
     parser.add_argument("--show-agent-summary", action="store_true",
@@ -311,6 +315,7 @@ async def main():
     }
 
     topics_csv_path = os.path.join(os.path.dirname(__file__), args.topics_csv) if not os.path.isabs(args.topics_csv) else args.topics_csv
+    topics_list = []
     if os.path.exists(topics_csv_path):
         try:
             import pandas as pd
@@ -328,28 +333,52 @@ async def main():
                 df_topics[topic_col] = df_topics[topic_col].astype(str)
                 df_topics = df_topics[df_topics[topic_col].str.strip() != ""]
                 if len(df_topics) > 0:
-                    sampled = df_topics.sample(
-                        n=min(args.topics_num, len(df_topics)),
-                        random_state=args.topics_seed
-                    )[topic_col].tolist()
-                    # 追加多个话题作为初始帖子
-                    for idx, topic in enumerate(sampled, start=1):
-                        initial_actions[env.agent_graph.get_agent(0)].append(
-                            ManualAction(
-                                action_type=ActionType.CREATE_POST,
-                                action_args={"content": f"【话题 {idx}】{topic}"}
-                            )
-                        )
+                    if args.topics_num <= 0:
+                        sampled = df_topics[topic_col].tolist()
+                    else:
+                        sampled = df_topics.sample(
+                            n=min(args.topics_num, len(df_topics)),
+                            random_state=args.topics_seed
+                        )[topic_col].tolist()
+                    topics_list = sampled
         except Exception as e:
             print(f"⚠️ 读取话题 CSV 失败: {e}")
     else:
         print(f"⚠️ 未找到话题 CSV: {topics_csv_path}")
 
+    # 追加多个话题作为初始帖子
+    if topics_list and args.topics_mode == "initial":
+        for idx, topic in enumerate(topics_list, start=1):
+            initial_actions[env.agent_graph.get_agent(0)].append(
+                ManualAction(
+                    action_type=ActionType.CREATE_POST,
+                    action_args={"content": f"【话题 {idx}】{topic}"}
+                )
+            )
+
     await env.step(initial_actions)
 
     print("🤖 开始 Agent 交互...")
+    topic_index = 0
     for round_num in range(args.rounds):
         print(f"  轮次 {round_num + 1}/{args.rounds}")
+
+        if topics_list and args.topics_mode == "per-round":
+            # 每轮先发布一批话题
+            batch = topics_list[topic_index: topic_index + max(1, args.topics_per_round)]
+            if batch:
+                topic_index += len(batch)
+                topic_actions = {
+                    env.agent_graph.get_agent(0): [
+                        ManualAction(
+                            action_type=ActionType.CREATE_POST,
+                            action_args={"content": f"【话题 {topic_index - len(batch) + i + 1}】{topic}"}
+                        )
+                        for i, topic in enumerate(batch)
+                    ]
+                }
+                await env.step(topic_actions)
+
         actions = {agent: LLMAction() for _, agent in env.agent_graph.get_agents()}
         await env.step(actions)
 
