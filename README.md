@@ -59,6 +59,10 @@
 
 <br>
 
+## 🧩 Community Simulation (Local)
+
+只想跑单一的本地 Agent 社区模拟，请看 `README_COMMUNITY.md`。
+
 ## ✨ Key Features
 
 ### 📈 Scalability

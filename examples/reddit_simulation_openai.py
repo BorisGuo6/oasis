@@ -26,7 +26,7 @@ async def main():
     # Define the model for the agents
     openai_model = ModelFactory.create(
         model_platform=ModelPlatformType.OPENAI,
-        model_type=ModelType.GPT_4O_MINI,
+        model_type="gpt-5.1",
     )
 
     # Define the available actions for the agents
