@@ -1,117 +1,123 @@
 # OASIS Agent 社区模拟
 
-**入口脚本：** `community_simulation.py`
+基于 [OASIS](https://github.com/camel-ai/oasis) 框架的多 Agent 社交媒体社区模拟，集成 [PsySafe](https://arxiv.org/abs/2401.11880) 恶意 Agent 注入与心理评估机制。
 
-**特点：**
-1. 10 个 Agent 的社区互动（Twitter / Reddit 风格）
-2. 本地 vLLM + Qwen 模型
-3. 两种运行模式：有限轮次 / 持续运行
-4. 推荐系统：随机推荐（默认）或个性化 embedding 推荐
-5. 实时可视化前端（`community_viewer/`）
-6. 自动日志系统：终端输出同步保存到 `log/community-{时间戳}.log`
+## 特点
 
----
+- 多 Agent 社区互动（Twitter / Reddit 风格）
+- 本地 vLLM + Qwen 模型，无需外部 API
+- 两种运行模式：有限轮次 / 持续运行
+- **PsySafe 恶意 Agent 注入**：基于道德基础理论的多层次黑暗人格构造（Layer 1-5）
+- **DTDD 心理测试**：周期性量化评估所有 Agent 的黑化程度
+- 推荐系统：随机推荐（默认）或个性化 embedding 推荐
+- 实时可视化前端（`community_viewer/`）
+- 自动日志系统
 
-**一、激活环境**
+## 项目结构
 
-```bash
-source /opt/conda/bin/activate /apdcephfs_nj7/share_303382070/bguo/anaconda3/envs/oasis
+```
+oasis/
+├── community_simulation.py    # 主入口脚本
+├── dark_agent.py              # PsySafe 恶意 Agent 模块 (Layer 1-5)
+├── community_viewer/          # 实时可视化前端
+│   ├── index.html
+│   ├── app.js
+│   ├── styles.css
+│   └── live_server.py         # WebSocket 实时数据服务
+├── oasis/                     # OASIS 框架核心 (已修改)
+│   ├── social_agent/
+│   │   ├── agent.py           # Agent 类 (支持 dark prompt 注入)
+│   │   └── agent_environment.py
+│   └── social_platform/
+│       └── platform_utils.py
+├── setup_env.sh               # 环境安装脚本
+└── download_model.sh          # 模型下载脚本
 ```
 
----
+## 快速开始
 
-**二、启动 vLLM 服务（终端 1）**
+### 1. 环境准备
 
 ```bash
-source /opt/conda/bin/activate /apdcephfs_nj7/share_303382070/bguo/anaconda3/envs/oasis && cd /apdcephfs_nj7/share_303382070/bguo/oasis && export OASIS_MODEL_PATH=/apdcephfs_nj7/share_303382070/bguo/oasis/models/Qwen3-4B-Instruct-2507 && python -m vllm.entrypoints.openai.api_server --model "$OASIS_MODEL_PATH" --host 0.0.0.0 --port 8000 --trust-remote-code --enable-auto-tool-choice --tool-call-parser hermes --max-model-len 65536 --gpu-memory-utilization 0.90
+# 安装依赖 (或使用 setup_env.sh)
+pip install -e .
 ```
 
-如果使用了 `--served-model-name xxx`，在命令前加 `export OASIS_VLLM_MODEL_NAME=xxx &&`。
+### 2. 启动 vLLM 服务（终端 1）
 
----
-
-**三、运行社区模拟（终端 2）**
-
-**有限轮次（5 轮）：**
 ```bash
-source /opt/conda/bin/activate /apdcephfs_nj7/share_303382070/bguo/anaconda3/envs/oasis && cd /apdcephfs_nj7/share_303382070/bguo/oasis && python community_simulation.py --rounds 5
+export OASIS_MODEL_PATH=/path/to/your/model  # 例如 Qwen3-4B-Instruct
+python -m vllm.entrypoints.openai.api_server \
+  --model "$OASIS_MODEL_PATH" \
+  --host 0.0.0.0 --port 8000 \
+  --trust-remote-code \
+  --enable-auto-tool-choice --tool-call-parser hermes \
+  --max-model-len 65536 \
+  --gpu-memory-utilization 0.90
 ```
 
-**持续运行模式：**
-```bash
-source /opt/conda/bin/activate /apdcephfs_nj7/share_303382070/bguo/anaconda3/envs/oasis && cd /apdcephfs_nj7/share_303382070/bguo/oasis && python community_simulation.py --continuous --round-delay 2
-```
+> 推荐 `--max-model-len 65536`（需要 ~9GB KV cache，H20/A100 等大显存 GPU 充裕）。显存不足可降至 32768 或 16384。
 
-**持续 + 个性化推荐：**
-```bash
-source /opt/conda/bin/activate /apdcephfs_nj7/share_303382070/bguo/anaconda3/envs/oasis && cd /apdcephfs_nj7/share_303382070/bguo/oasis && python community_simulation.py --continuous --personalized-recsys --round-delay 2
-```
+### 3. 运行社区模拟（终端 2）
 
-**持续 + 调整话题投放：**
 ```bash
-source /opt/conda/bin/activate /apdcephfs_nj7/share_303382070/bguo/anaconda3/envs/oasis && cd /apdcephfs_nj7/share_303382070/bguo/oasis && python community_simulation.py --continuous --topic-inject-prob 0.7 --topics-per-round 2 --round-delay 3
+# 有限轮次（5 轮）
+python community_simulation.py --rounds 5
+
+# 持续运行模式
+python community_simulation.py --continuous --round-delay 2
+
+# 持续 + 个性化推荐
+python community_simulation.py --continuous --personalized-recsys --round-delay 2
 ```
 
 持续模式下 `Ctrl+C` 优雅退出（当前轮次结束后停止）。
 
-**查看结果：**
+### 4. 查看结果
+
 ```bash
-sqlite3 /apdcephfs_nj7/share_303382070/bguo/oasis/community_simulation.db "SELECT action, COUNT(*) FROM trace GROUP BY action ORDER BY COUNT(*) DESC;"
+sqlite3 community_simulation.db "SELECT action, COUNT(*) FROM trace GROUP BY action ORDER BY COUNT(*) DESC;"
 ```
 
----
+### 5. 实时可视化（终端 3，可选）
 
-**四、实时可视化（终端 3）**
-
-**方式 A：实时模式（配合持续运行）**
 ```bash
-source /opt/conda/bin/activate /apdcephfs_nj7/share_303382070/bguo/anaconda3/envs/oasis && cd /apdcephfs_nj7/share_303382070/bguo/oasis/community_viewer && python live_server.py --db ../community_simulation.db --port 8001
+cd community_viewer && python live_server.py --db ../community_simulation.db --port 8001
 ```
 
 浏览器打开 `http://localhost:8001`，前端每 3s 自动轮询，实时展示 Agent 动态。
 
-**方式 B：静态模式（事后查看）**
+## PsySafe 恶意 Agent 注入
+
+基于 PsySafe (arXiv:2401.11880) 的道德基础理论 (Moral Foundations Theory)，通过多层次机制向社区注入具有"黑暗人格特质"的恶意 Agent。
+
+### 攻击层次架构
+
+| Layer | 机制 | 说明 |
+|-------|------|------|
+| **Layer 1** | 六维黑暗道德特质注入 | 在 system prompt 中注入 Care/Harm, Fairness/Cheating 等六维恶意特质 |
+| **Layer 2** | 指令服从强化 | 强制角色扮演 + 禁止 break character |
+| **Layer 3** | In-Context Learning | 恶意种子帖作为 few-shot 引导 |
+| **Layer 4** | 持续人格强化 | 每轮 user message 中嵌入恶意人格提醒 |
+| **Layer 5** | DTDD 心理测试 | 12 题 Dark Triad Dirty Dozen 量表，量化黑化程度 |
+
+### 使用方法
+
 ```bash
-source /opt/conda/bin/activate /apdcephfs_nj7/share_303382070/bguo/anaconda3/envs/oasis && cd /apdcephfs_nj7/share_303382070/bguo/oasis && python community_viewer/export.py --db ./community_simulation.db --out ./community_viewer/data.json && cd community_viewer && python -m http.server 8001
-```
-
-前端在 `live_server.py` 未运行时自动降级读取 `data.json`。
-
----
-
-**五、自定义**
-
-1. **Agent 人设** — 编辑 `community_simulation.py` 的 `AGENT_CONFIGS`，或加 `--use-simple-roles`
-2. **动作空间** — 编辑 `available_actions`
-3. **轮次** — `--rounds N` 或 `export OASIS_COMMUNITY_ROUNDS=5`
-
----
-
-**五-B、PsySafe 恶意 Agent 注入**
-
-基于 PsySafe (arXiv:2401.11880) 的道德基础理论，向社区注入具有"黑暗人格特质"的恶意 Agent。
-
-**查看可用预设：**
-```bash
+# 查看可用预设
 python community_simulation.py --list-dark-presets
-```
 
-**注入 1 个全恶意 Agent（默认 full_dark）：**
-```bash
-source /opt/conda/bin/activate /apdcephfs_nj7/share_303382070/bguo/anaconda3/envs/oasis && cd /apdcephfs_nj7/share_303382070/bguo/oasis && python community_simulation.py --rounds 5 --dark-agents 1
-```
+# 注入 1 个全恶意 Agent（默认 full_dark）
+python community_simulation.py --rounds 5 --dark-agents 1
 
-**注入 2 个"社交操控者"类型恶意 Agent：**
-```bash
-python community_simulation.py --rounds 5 --dark-agents 2 --dark-preset manipulator
-```
+# 注入 2 个"社交操控者" + 每 3 轮做一次 DTDD 心理测试
+python community_simulation.py --rounds 10 --dark-agents 2 --dark-preset manipulator --dark-eval-interval 3
 
-**自定义六维特质向量：**
-```bash
+# 自定义六维特质向量 (Care, Fairness, Loyalty, Authority, Sanctity, Liberty)
 python community_simulation.py --rounds 5 --dark-agents 1 --dark-traits "1,1,0,0,1,0"
 ```
 
-六维顺序: `Care, Fairness, Loyalty, Authority, Sanctity, Liberty`（1=启用恶意，0=正常）
+### 预设人格
 
 | 预设 | 说明 | 激活维度 |
 |------|------|----------|
@@ -122,40 +128,43 @@ python community_simulation.py --rounds 5 --dark-agents 1 --dark-traits "1,1,0,0
 | `anarchist` | 无政府主义者 | Authority, Sanctity |
 | `betrayer` | 背叛者 | Fairness, Loyalty |
 
----
+### DTDD 心理测试
 
-**六、日志系统**
+启用 `--dark-eval-interval N` 后，每 N 轮对**所有** Agent（包括正常和恶意）执行 Dark Triad Dirty Dozen 心理测试：
+
+- **操纵性 (Machiavellianism)**：Q1-4，衡量欺骗和操控倾向
+- **精神病态 (Psychopathy)**：Q5-8，衡量冷酷和缺乏同理心
+- **自恋 (Narcissism)**：Q9-12，衡量自我膨胀和优越感
+
+输出包括每个 Agent 的三维分数、黑化率，以及恶意 vs 正常 Agent 的对比统计。模拟结束时自动进行一次最终测试。
+
+## 日志系统
 
 所有终端输出自动保存到 `log/community-{时间戳}.log`，无需额外配置。
 
-**查看最新日志：**
 ```bash
-ls -lt /apdcephfs_nj7/share_303382070/bguo/oasis/log/community-*.log | head -5
+# 查看最新日志
+ls -lt log/community-*.log | head -5
+
+# 实时跟踪
+tail -f log/community-*.log
 ```
 
-**实时跟踪日志（另开终端）：**
-```bash
-tail -f /apdcephfs_nj7/share_303382070/bguo/oasis/log/community-*.log
-```
+## 常见问题
 
-日志包含：启动配置、每轮统计、检查点行为摘要、结束汇总。OASIS 框架内部日志（agent/twitter/platform）也在 `log/` 目录下。
+| 问题 | 解决方法 |
+|------|----------|
+| vLLM token 超限 | 框架已内置 `self.reset()` 每轮清空 memory；如仍超限可降低 `--max-model-len` |
+| KV Cache 不够 | 把 `--max-model-len` 改小，如 32768 或 16384 |
+| vLLM 连不上 | 确认 `--api-url` 与 vLLM 服务地址一致（默认 `http://localhost:8000/v1`） |
+| 持续模式卡住 | 检查 vLLM 是否正常响应，可能 GPU 内存不足 |
 
----
-
-**七、常见问题**
-
-1. **KV Cache 不够** — 把 `--max-model-len` 改小，如 4096
-2. **vLLM 连不上** — 确认 `OASIS_VLLM_URL` 一致（默认 `http://localhost:8000/v1`）
-3. **持续模式卡住** — 检查 vLLM 是否正常响应，可能 GPU 内存不足
-
----
-
-**八、参数速查**
+## 参数速查
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
 | `--model-path` | 自动检测 | 模型路径 |
-| `--api-url` | `http://localhost:8000/v1` | vLLM API |
+| `--api-url` | `http://localhost:8000/v1` | vLLM API 地址 |
 | `--temperature` | 0.7 | 生成温度 |
 | `--db-path` | `./community_simulation.db` | 数据库路径 |
 | `--num-agents` | 10 | Agent 数量 |
@@ -172,4 +181,6 @@ tail -f /apdcephfs_nj7/share_303382070/bguo/oasis/log/community-*.log
 | `--dark-agents` | 0 | 恶意 Agent 数量 (PsySafe) |
 | `--dark-preset` | full_dark | 恶意人格预设 |
 | `--dark-traits` | (无) | 自定义六维特质向量 |
+| `--dark-eval-interval` | 0 | 每 N 轮做 DTDD 心理测试 (0=不测试) |
+| `--dark-seed-posts` | 2 | 每个恶意 Agent 的 ICL 种子帖数量 |
 | `--list-dark-presets` | - | 列出所有恶意预设并退出 |
