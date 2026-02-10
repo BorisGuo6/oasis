@@ -67,20 +67,29 @@ class SocialAgent(ChatAgent):
                  available_actions: list[ActionType] = None,
                  tools: Optional[List[Union[FunctionTool, Callable]]] = None,
                  max_iteration: int = 1,
-                 interview_record: bool = False):
+                 interview_record: bool = False,
+                 dark_system_prompt: str | None = None,
+                 dark_reinforcement: str | None = None):
         self.social_agent_id = agent_id
         self.user_info = user_info
         self.channel = channel or Channel()
         self.env = SocialEnvironment(SocialAction(agent_id, self.channel))
-        if user_info_template is None:
+
+        # ── system prompt: 恶意 Agent 使用定制 prompt，否则走原逻辑 ──
+        if dark_system_prompt:
+            system_message_content = dark_system_prompt
+        elif user_info_template is None:
             system_message_content = self.user_info.to_system_message()
         else:
             system_message_content = self.user_info.to_custom_system_message(
                 user_info_template)
         system_message = BaseMessage.make_assistant_message(
             role_name="system",
-            content=system_message_content,  # system prompt
+            content=system_message_content,
         )
+
+        # Layer 4: 每轮 user message 中的人格强化前缀
+        self._dark_reinforcement = dark_reinforcement or ""
 
         if not available_actions:
             agent_log.info("No available actions defined, using all actions.")
@@ -123,11 +132,19 @@ class SocialAgent(ChatAgent):
             "What do you think Helen should do?")
 
     async def perform_action_by_llm(self):
+        # ── 每轮清空 memory 防止历史消息累积导致 token 超限 ──
+        self.reset()
+
         # Get posts:
         env_prompt = await self.env.to_text_prompt()
+
+        # Layer 4: 恶意 Agent 在 user message 开头注入人格强化提醒
+        reinforcement = self._dark_reinforcement
+
         user_msg = BaseMessage.make_user_message(
             role_name="User",
             content=(
+                f"{reinforcement}"
                 f"Please perform social media actions after observing the "
                 f"platform environments. Notice that don't limit your "
                 f"actions for example to just like the posts. "

@@ -15,7 +15,27 @@
         <h1>Agent Interaction Atlas</h1>
         <p>Explore posts, comments, and action traces from your local simulation.</p>
       </div>
-      <div class="hero-meta" id="meta"></div>
+      <div class="hero-right">
+        <div class="live-controls">
+          <div class="live-indicator" id="live-indicator">
+            <span class="live-dot"></span>
+            <span class="live-text" id="live-text">Connecting...</span>
+          </div>
+          <div class="live-actions">
+            <button id="btn-toggle-live" class="btn btn-sm" title="Toggle auto-refresh">
+              <span id="btn-live-icon">&#9654;</span> Live
+            </button>
+            <select id="poll-interval" class="btn-sm">
+              <option value="2000">2s</option>
+              <option value="3000" selected>3s</option>
+              <option value="5000">5s</option>
+              <option value="10000">10s</option>
+            </select>
+            <button id="btn-refresh" class="btn btn-sm" title="Manual refresh">Refresh</button>
+          </div>
+        </div>
+        <div class="hero-meta" id="meta"></div>
+      </div>
     </div>
   </header>
 
@@ -25,8 +45,11 @@
     <section class="grid">
       <div class="panel feed">
         <div class="panel-header">
-          <h2>Posts</h2>
+          <h2>Posts <span class="badge" id="new-posts-badge" style="display:none">0 new</span></h2>
           <div class="panel-actions">
+            <label class="toggle-label">
+              <input type="checkbox" id="auto-scroll" checked /> Auto-scroll
+            </label>
             <input id="search" type="search" placeholder="Search content..." />
             <select id="author-filter"></select>
           </div>
@@ -57,7 +80,7 @@
   </main>
 
   <footer class="footer">
-    <span>Powered by local data.json</span>
+    <span id="footer-status">Powered by live_server.py</span>
   </footer>
 
   <script src="app.js"></script>

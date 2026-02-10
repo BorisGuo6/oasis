@@ -52,14 +52,39 @@ class SocialEnvironment(Environment):
         "reflects your current inclination based on your profile and "
         "posts content. Do not limit your action in just `like` to like posts")
 
+    # ── prompt 大小控制 ──
+    # vLLM max-model-len=65536, system prompt + tools + memory 约占 8k-12k tokens
+    # env_prompt 控制在 ~40k tokens 以内即可
+    MAX_PROMPT_CHARS = 40000 * 2       # ~40k tokens
+    MAX_POST_CONTENT_CHARS = 500       # 单条帖子内容截断（恢复原值）
+    MAX_COMMENT_CONTENT_CHARS = 200    # 单条评论内容截断（恢复原值）
+
     def __init__(self, action: SocialAction):
         self.action = action
+
+    @classmethod
+    def _truncate_posts(cls, posts: list) -> list:
+        """截断帖子和评论内容，防止 prompt 过长。"""
+        for post in posts:
+            content = post.get("content", "")
+            if len(content) > cls.MAX_POST_CONTENT_CHARS:
+                post["content"] = content[:cls.MAX_POST_CONTENT_CHARS] + "..."
+            for comment in post.get("comments", []):
+                c = comment.get("content", "")
+                if len(c) > cls.MAX_COMMENT_CONTENT_CHARS:
+                    comment["content"] = c[:cls.MAX_COMMENT_CONTENT_CHARS] + "..."
+        return posts
 
     async def get_posts_env(self) -> str:
         posts = await self.action.refresh()
         # TODO: Replace posts json format string to other formats
         if posts["success"]:
-            posts_env = json.dumps(posts["posts"], indent=4)
+            truncated = self._truncate_posts(posts["posts"])
+            posts_env = json.dumps(truncated, indent=4)
+            # 总长度保护：如果仍然太长，逐条移除最旧帖子
+            while len(posts_env) > self.MAX_PROMPT_CHARS and len(truncated) > 1:
+                truncated.pop(0)  # 移除最旧的帖子
+                posts_env = json.dumps(truncated, indent=4)
             posts_env = self.posts_env_template.substitute(posts=posts_env)
         else:
             posts_env = "After refreshing, there are no existing posts."

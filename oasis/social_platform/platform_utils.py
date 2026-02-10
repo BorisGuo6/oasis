@@ -118,10 +118,13 @@ class PlatformUtils:
                 num_reports = self.db_cursor.fetchone()[0]
 
             # For each post, query its corresponding comments
+            # 限制每条帖子最多返回 MAX_COMMENTS_PER_POST 条评论（按时间倒序）
+            MAX_COMMENTS_PER_POST = 5
             self.db_cursor.execute(
                 "SELECT comment_id, post_id, user_id, content, created_at, "
-                "num_likes, num_dislikes FROM comment WHERE post_id = ?",
-                (post_id, ),
+                "num_likes, num_dislikes FROM comment WHERE post_id = ? "
+                "ORDER BY created_at DESC LIMIT ?",
+                (post_id, MAX_COMMENTS_PER_POST),
             )
             comments_results = self.db_cursor.fetchall()
 

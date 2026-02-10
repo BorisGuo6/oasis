@@ -99,3 +99,6 @@ models/
 *.sqlite
 
 tmp
+_psysafe_ref/
+log/
+data/
