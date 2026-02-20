@@ -4,7 +4,7 @@ vars:
   core_team: [3, 4, 5]
 
 plan:
-  # 1) 预热：依次让 0,1,2 发言
+  # 1) 预热：依次让 0,1,2 发言（串行）
   - for_each:
       var: agent_id
       in: "${vars[\"warmup_agents\"]}"
@@ -26,7 +26,15 @@ plan:
     do:
       - llm: { agent: 9 }
 
-  # 4) 手动动作示例（可选）
+  # 4) 并行：多个 Agent 同时发起 LLM 调用
+  - parallel: { agents: [1, 2, 3] }
+
+  # 5) 混合编排示例：A串行 → [B,C,D]并行 → E串行
+  #    - llm: { agent: 0 }
+  #    - parallel: { agents: [1, 2, 3] }
+  #    - llm: { agent: 4 }
+
+  # 6) 手动动作示例（可选）
   - manual:
       agent: 0
       action_type: create_post

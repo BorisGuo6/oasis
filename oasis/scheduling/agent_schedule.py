@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterable, List, Tuple
 
 from yaml import safe_load
 
-from oasis.environment.env_action import LLMAction, ManualAction
+from oasis.environment.env_action import LLMAction, ManualAction, ParallelGroup
 from oasis.social_agent.agent import SocialAgent
 from oasis.social_agent.agent_graph import AgentGraph
 from oasis.social_platform.typing import ActionType
@@ -223,6 +223,9 @@ class AgentSchedule:
                     value = dict(stmt["repeat"] or {})
                     if "do" in stmt and "do" not in value:
                         value["do"] = stmt["do"]
+                elif "parallel" in stmt:
+                    key = "parallel"
+                    value = stmt["parallel"]
                 else:
                     raise ScheduleError(
                         f"Each statement must be a single-key mapping. Got: {stmt}"
@@ -296,6 +299,16 @@ class AgentSchedule:
                 if not var_name:
                     raise ScheduleError("set statement missing var.")
                 env[var_name] = _render_value(value.get("value"), env)
+                continue
+
+            if key == "parallel":
+                spec = value if isinstance(value, dict) else {"agents": value}
+                agent_ids = _resolve_agent_ids(spec, env)
+                group_items = [
+                    (agent_graph.get_agent(aid), LLMAction())
+                    for aid in agent_ids
+                ]
+                ordered_actions.append((None, ParallelGroup(items=group_items)))
                 continue
 
             raise ScheduleError(f"Unknown statement type: {key}")

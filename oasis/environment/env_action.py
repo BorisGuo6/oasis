@@ -61,3 +61,13 @@ class ExternalAction:
     endpoint: str
     timeout: float = 30.0
     extra_context: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ParallelGroup:
+    r"""A group of (agent, action) pairs that should be executed concurrently.
+
+    Used by the schedule system to mix serial and parallel execution within
+    a single ``step_ordered`` call.
+    """
+    items: list  # List of (SocialAgent, action) tuples

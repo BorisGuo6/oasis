@@ -1,0 +1,44 @@
+# Interview Pattern (访谈模式)
+# ===============================
+# Agent layout:
+#   0       — Interviewer (采访者)
+#   1..G    — Interviewees/Guests (被采访者)
+#   G+1..N-1 — Audience (optional, 观众)
+#
+# Default: 5 agents (1 interviewer + 2 guests + 2 audience)
+
+version: 1
+vars:
+  interviewer: 0
+  guests: [1, 2]
+  audience: [3, 4]
+
+plan:
+  # --- Opening: Interviewer introduces ---
+  - llm: { agent: "${vars[\"interviewer\"]}" }
+
+  # --- Interview rounds: Q&A for each guest ---
+  - for_each:
+      var: guest
+      in: "${vars[\"guests\"]}"
+    do:
+      # Interviewer asks
+      - llm: { agent: "${vars[\"interviewer\"]}" }
+      # Guest responds
+      - llm: { agent: "${guest}" }
+      # Follow-up
+      - llm: { agent: "${vars[\"interviewer\"]}" }
+      - llm: { agent: "${guest}" }
+
+  # --- Open discussion: all guests together ---
+  - llm: { agent: "${vars[\"interviewer\"]}" }
+  - parallel: { agents: "${vars[\"guests\"]}" }
+
+  # --- Audience reactions (parallel) ---
+  - if:
+      condition: "len(${vars[\"audience\"]}) > 0"
+    then:
+      - parallel: { agents: "${vars[\"audience\"]}" }
+
+  # --- Interviewer closing ---
+  - llm: { agent: "${vars[\"interviewer\"]}" }

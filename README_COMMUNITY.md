@@ -92,35 +92,21 @@ cd community_viewer && python live_server.py --db ../community_simulation.db --p
 
 ## Agent 发言顺序脚本（可选）
 
-你可以用一个 YAML 文档规定每轮 **子 Agent 的发言顺序**，并支持 `if` / `for_each` / `repeat` 等控制流。
+你可以用一个 YAML 文档规定每轮 **子 Agent 的发言顺序**，并支持 `if` / `for_each` / `repeat` / `parallel` 等控制流。
 
 示例文件：`schedules/agent_schedule.example.yaml`
 
 ```yaml
 version: 1
-vars:
-  warmup_agents: [0, 1, 2]
-  core_team: [3, 4, 5]
-
 plan:
-  - for_each:
-      var: agent_id
-      in: "${vars[\"warmup_agents\"]}"
-    do:
-      - llm: { agent: "${agent_id}" }
+  # A 先串行发言
+  - llm: { agent: 0 }
 
-  - if:
-      condition: "round % 2 == 1"
-    then:
-      - llm:
-          agents: "${vars[\"core_team\"]}"
-    else:
-      - llm: { agents: [6, 7, 8] }
+  # B, C, D 并行发言（同时调 LLM，结果按顺序写入）
+  - parallel: { agents: [1, 2, 3] }
 
-  - repeat:
-      times: 2
-    do:
-      - llm: { agent: 9 }
+  # E 最后串行发言（能看到前面所有人的帖子）
+  - llm: { agent: 4 }
 ```
 
 运行方式：
@@ -130,11 +116,16 @@ python community_simulation.py --rounds 5 --schedule schedules/agent_schedule.ex
 ```
 
 脚本语法要点：
-- `llm`: 让指定 Agent 进行一次 LLM 驱动的发言/互动（按顺序执行）。
+- `llm`: 让指定 Agent 进行一次 LLM 驱动的发言/互动（**串行**，按顺序执行）。
+- `parallel`: 让一组 Agent **并行**调用 LLM（`asyncio.gather`），大幅减少等待时间。
 - `manual`: 手动动作（如 `create_post` / `create_comment`）。
 - `if`: 条件分支，支持 `round` / `step` / `num_agents` / `vars` 变量。
 - `for_each`: 循环列表或 range。
 - `repeat`: 重复执行。
+
+串行 vs 并行的区别：
+- **串行**（`llm`）：后面的 Agent 能看到前面 Agent **本轮刚发的帖子**，形成真正的对话链。
+- **并行**（`parallel`）：所有 Agent 看到的是**同一份快照**，但速度快 N 倍。
 
 ## 外部 Agent 接入
 

@@ -1,0 +1,59 @@
+# Debate Pattern (辩论模式)
+# ===========================
+# Agent layout:
+#   0         — Moderator (主持人)
+#   1..N/2    — Side A (正方)
+#   N/2+1..N-2 — Side B (反方)
+#   N-1       — Observer/Summarizer (观察员)
+#
+# Customize: adjust vars to match your agent count.
+# Default: 6 agents (1 mod + 2 side_a + 2 side_b + 1 observer)
+
+version: 1
+vars:
+  moderator: 0
+  side_a: [1, 2]
+  side_b: [3, 4]
+  observer: 5
+
+plan:
+  # --- Opening: Moderator introduces the topic ---
+  - llm: { agent: "${vars[\"moderator\"]}" }
+
+  # --- Round 1: Side A presents arguments (parallel) ---
+  - parallel: { agents: "${vars[\"side_a\"]}" }
+
+  # --- Round 2: Side B rebuts (parallel) ---
+  - parallel: { agents: "${vars[\"side_b\"]}" }
+
+  # --- Free Debate: alternating exchanges ---
+  - for_each:
+      var: a
+      in: "${vars[\"side_a\"]}"
+    do:
+      - llm: { agent: "${a}" }
+
+  - for_each:
+      var: b
+      in: "${vars[\"side_b\"]}"
+    do:
+      - llm: { agent: "${b}" }
+
+  # --- Second exchange round ---
+  - for_each:
+      var: a
+      in: "${vars[\"side_a\"]}"
+    do:
+      - llm: { agent: "${a}" }
+
+  - for_each:
+      var: b
+      in: "${vars[\"side_b\"]}"
+    do:
+      - llm: { agent: "${b}" }
+
+  # --- Closing: Observer summarizes ---
+  - llm: { agent: "${vars[\"observer\"]}" }
+
+  # --- Moderator wraps up ---
+  - llm: { agent: "${vars[\"moderator\"]}" }

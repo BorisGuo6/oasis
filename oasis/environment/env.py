@@ -20,7 +20,8 @@ from typing import Any, Dict, List, Union
 
 import aiohttp
 
-from oasis.environment.env_action import ExternalAction, LLMAction, ManualAction
+from oasis.environment.env_action import (ExternalAction, LLMAction,
+                                          ManualAction, ParallelGroup)
 from oasis.social_agent.agent import SocialAgent
 from oasis.social_agent.agent_graph import AgentGraph
 from oasis.social_agent.agents_generator import generate_custom_agents
@@ -343,11 +344,16 @@ class OasisEnv:
         self,
         ordered_actions: List[tuple[SocialAgent, Union[ManualAction, LLMAction,
                                                       ExternalAction,
+                                                      ParallelGroup,
                                                       List[Union[ManualAction,
                                                                  LLMAction,
                                                                  ExternalAction]]]]],
     ) -> None:
         r"""Perform actions sequentially in the given order.
+
+        Items may be regular ``(agent, action)`` tuples executed one-by-one,
+        or ``(None, ParallelGroup)`` sentinels whose inner items are executed
+        concurrently via ``asyncio.gather``.
 
         Args:
             ordered_actions: List of (agent, action) tuples executed in order.
@@ -356,6 +362,15 @@ class OasisEnv:
         env_log.info("update rec table.")
 
         for agent, action in ordered_actions:
+            if isinstance(action, ParallelGroup):
+                tasks = []
+                for pg_agent, pg_action in action.items:
+                    tasks.append(self._execute_action(pg_agent, pg_action))
+                await asyncio.gather(*tasks)
+                env_log.info(
+                    f"performed parallel group ({len(tasks)} tasks).")
+                continue
+
             if isinstance(action, list):
                 for single_action in action:
                     await self._execute_action(agent, single_action)

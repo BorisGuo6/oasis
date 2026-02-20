@@ -1,0 +1,28 @@
+# Brainstorm Pattern (头脑风暴)
+# ===============================
+# All agents are equal participants.
+# Optional: Agent 0 as facilitator.
+#
+# Flow:
+#   1. Parallel ideation (everyone throws out ideas simultaneously)
+#   2. Serial deepening (each agent builds on what they've seen)
+#   3. Parallel convergence (everyone responds to the collective pool)
+
+version: 1
+
+plan:
+  # --- Phase 1: Rapid ideation (parallel) ---
+  # Everyone generates ideas independently and simultaneously
+  - parallel: { range: [0, "${num_agents - 1}"] }
+
+  # --- Phase 2: Deep-dive (serial) ---
+  # Each agent reads all previous ideas and adds depth
+  - for_each:
+      var: i
+      in: "${range(num_agents)}"
+    do:
+      - llm: { agent: "${i}" }
+
+  # --- Phase 3: Convergence (parallel) ---
+  # Everyone responds to the enriched idea pool
+  - parallel: { range: [0, "${num_agents - 1}"] }
