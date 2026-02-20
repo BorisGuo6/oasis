@@ -1,0 +1,34 @@
+version: 1
+vars:
+  warmup_agents: [0, 1, 2]
+  core_team: [3, 4, 5]
+
+plan:
+  # 1) 预热：依次让 0,1,2 发言
+  - for_each:
+      var: agent_id
+      in: "${vars[\"warmup_agents\"]}"
+    do:
+      - llm: { agent: "${agent_id}" }
+
+  # 2) 按轮次切换发言组
+  - if:
+      condition: "round % 2 == 1"
+    then:
+      - llm:
+          agents: "${vars[\"core_team\"]}"
+    else:
+      - llm: { agents: [6, 7, 8] }
+
+  # 3) 循环：让 9 号连续发言 2 次
+  - repeat:
+      times: 2
+    do:
+      - llm: { agent: 9 }
+
+  # 4) 手动动作示例（可选）
+  - manual:
+      agent: 0
+      action_type: create_post
+      action_args:
+        content: "【脚本发言】这是一条由调度脚本强制发布的帖子。"

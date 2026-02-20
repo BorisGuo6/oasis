@@ -133,6 +133,18 @@ class OasisEnv:
         async with self.llm_semaphore:
             return await agent.perform_interview(interview_prompt)
 
+    async def _execute_action(self, agent, action):
+        if isinstance(action, ManualAction):
+            if action.action_type == ActionType.INTERVIEW:
+                interview_prompt = action.action_args.get("prompt", "")
+                return await self._perform_interview_action(
+                    agent, interview_prompt)
+            return await agent.perform_action_by_data(
+                action.action_type, **action.action_args)
+        if isinstance(action, LLMAction):
+            return await self._perform_llm_action(agent)
+        return None
+
     async def step(
         self, actions: dict[SocialAgent, Union[ManualAction, LLMAction,
                                                List[Union[ManualAction,
@@ -194,6 +206,31 @@ class OasisEnv:
         env_log.info("performed all actions.")
         # # Control some agents to perform actions
         # Update the clock
+        if self.platform_type == DefaultPlatformType.TWITTER:
+            self.platform.sandbox_clock.time_step += 1
+
+    async def step_ordered(
+        self,
+        ordered_actions: List[tuple[SocialAgent, Union[ManualAction, LLMAction,
+                                                      List[Union[ManualAction,
+                                                                 LLMAction]]]]],
+    ) -> None:
+        r"""Perform actions sequentially in the given order.
+
+        Args:
+            ordered_actions: List of (agent, action) tuples executed in order.
+        """
+        await self.platform.update_rec_table()
+        env_log.info("update rec table.")
+
+        for agent, action in ordered_actions:
+            if isinstance(action, list):
+                for single_action in action:
+                    await self._execute_action(agent, single_action)
+            else:
+                await self._execute_action(agent, action)
+
+        env_log.info("performed all ordered actions.")
         if self.platform_type == DefaultPlatformType.TWITTER:
             self.platform.sandbox_clock.time_step += 1
 

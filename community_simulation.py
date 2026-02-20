@@ -428,6 +428,8 @@ async def main():
     # 运行模式
     parser.add_argument("--rounds", type=int, default=int(os.environ.get("OASIS_COMMUNITY_ROUNDS", "3")),
                         help="有限轮次模式的轮数（--continuous 时作为检查点间隔）")
+    parser.add_argument("--schedule", default=os.environ.get("OASIS_AGENT_SCHEDULE", ""),
+                        help="Agent 发言顺序脚本（YAML），按顺序执行指定 Agent")
     parser.add_argument("--continuous", action="store_true",
                         default=os.environ.get("OASIS_CONTINUOUS", "") not in ("", "0", "false", "False"),
                         help="持续运行模式：不断抽取话题 + Agent 自主互动，Ctrl+C 优雅退出")
@@ -526,6 +528,7 @@ async def main():
     from camel.models import ModelManager
     from oasis import (ActionType, AgentGraph, LLMAction, ManualAction,
                        SocialAgent, UserInfo)
+    from oasis.scheduling import AgentSchedule, ScheduleError
 
     apply_offline_patches(oasis, use_personalized_recsys=args.personalized_recsys)
 
@@ -630,6 +633,18 @@ async def main():
     await env.reset()
     print("✅ 环境准备就绪")
 
+    schedule = None
+    if args.schedule:
+        schedule_path = args.schedule
+        if not os.path.isabs(schedule_path):
+            schedule_path = os.path.join(os.getcwd(), schedule_path)
+        try:
+            schedule = AgentSchedule.from_file(schedule_path)
+            print(f"📜 已加载发言顺序脚本: {schedule_path}")
+        except (OSError, ScheduleError) as e:
+            print(f"❌ 无法加载发言顺序脚本: {e}")
+            return
+
     # ── 加载话题 ──
     topics_csv_path = (os.path.join(os.path.dirname(__file__), args.topics_csv)
                        if not os.path.isabs(args.topics_csv) else args.topics_csv)
@@ -733,8 +748,13 @@ async def main():
                     await env.step(topic_actions)
 
             # 所有 Agent 自主行动（刷新 feed、发帖、评论、点赞等）
-            actions = {agent: LLMAction() for _, agent in env.agent_graph.get_agents()}
-            await env.step(actions)
+            if schedule:
+                ordered_actions = schedule.build_actions(env.agent_graph, round_num=round_num)
+                if ordered_actions:
+                    await env.step_ordered(ordered_actions)
+            else:
+                actions = {agent: LLMAction() for _, agent in env.agent_graph.get_agents()}
+                await env.step(actions)
 
             print_round_stats(round_num, start_time, topic_feeder)
 
@@ -788,8 +808,13 @@ async def main():
                     }
                     await env.step(topic_actions)
 
-            actions = {agent: LLMAction() for _, agent in env.agent_graph.get_agents()}
-            await env.step(actions)
+            if schedule:
+                ordered_actions = schedule.build_actions(env.agent_graph, round_num=round_num)
+                if ordered_actions:
+                    await env.step_ordered(ordered_actions)
+            else:
+                actions = {agent: LLMAction() for _, agent in env.agent_graph.get_agents()}
+                await env.step(actions)
             print_round_stats(round_num, start_time, topic_feeder)
 
             # DTDD 心理测试 (有限模式)

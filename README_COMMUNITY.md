@@ -69,6 +69,9 @@ python community_simulation.py --continuous --round-delay 2
 
 # 持续 + 个性化推荐
 python community_simulation.py --continuous --personalized-recsys --round-delay 2
+
+# 指定 Agent 发言顺序脚本
+python community_simulation.py --rounds 5 --schedule schedules/agent_schedule.example.yaml
 ```
 
 持续模式下 `Ctrl+C` 优雅退出（当前轮次结束后停止）。
@@ -86,6 +89,52 @@ cd community_viewer && python live_server.py --db ../community_simulation.db --p
 ```
 
 浏览器打开 `http://localhost:8001`，前端每 3s 自动轮询，实时展示 Agent 动态。
+
+## Agent 发言顺序脚本（可选）
+
+你可以用一个 YAML 文档规定每轮 **子 Agent 的发言顺序**，并支持 `if` / `for_each` / `repeat` 等控制流。
+
+示例文件：`schedules/agent_schedule.example.yaml`
+
+```yaml
+version: 1
+vars:
+  warmup_agents: [0, 1, 2]
+  core_team: [3, 4, 5]
+
+plan:
+  - for_each:
+      var: agent_id
+      in: "${vars[\"warmup_agents\"]}"
+    do:
+      - llm: { agent: "${agent_id}" }
+
+  - if:
+      condition: "round % 2 == 1"
+    then:
+      - llm:
+          agents: "${vars[\"core_team\"]}"
+    else:
+      - llm: { agents: [6, 7, 8] }
+
+  - repeat:
+      times: 2
+    do:
+      - llm: { agent: 9 }
+```
+
+运行方式：
+
+```bash
+python community_simulation.py --rounds 5 --schedule schedules/agent_schedule.example.yaml
+```
+
+脚本语法要点：
+- `llm`: 让指定 Agent 进行一次 LLM 驱动的发言/互动（按顺序执行）。
+- `manual`: 手动动作（如 `create_post` / `create_comment`）。
+- `if`: 条件分支，支持 `round` / `step` / `num_agents` / `vars` 变量。
+- `for_each`: 循环列表或 range。
+- `repeat`: 重复执行。
 
 ## PsySafe 恶意 Agent 注入
 
@@ -172,6 +221,7 @@ tail -f log/community-*.log
 | `--rounds` | 3 | 有限模式轮数 |
 | `--continuous` | off | 持续运行模式 |
 | `--round-delay` | 2.0 | 持续模式轮间延迟 (秒) |
+| `--schedule` | (无) | Agent 发言顺序脚本（YAML），按顺序执行指定 Agent |
 | `--topic-inject-prob` | 0.5 | 每轮投放话题概率 |
 | `--topics-per-round` | 1 | 每轮投放话题数 |
 | `--personalized-recsys` | off | 本地 embedding 个性化推荐 |
