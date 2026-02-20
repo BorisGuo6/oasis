@@ -254,3 +254,41 @@ See `references/yaml_dsl_spec.md` for the full specification. Key instructions:
 2. **`step_ordered` vs `step`**: When a schedule YAML is provided, the system uses `step_ordered()` (sequential with parallel groups), NOT `step()` (all-concurrent).
 3. **Expression syntax**: Use `${expression}` in YAML values. Available context: `round`, `step`, `num_agents`, `vars`.
 4. **Allowed builtins in expressions**: `range`, `len`, `min`, `max`, `int`, `float`, `bool`.
+
+## Project File Structure (Skill-relevant only)
+
+干净分支只保留 Skill 运行所需文件：
+
+```
+oasis/
+├── community_simulation.py       # 主入口
+├── dark_agent.py                 # PsySafe 黑暗人格模块（可选）
+├── example_external_agent.py     # 外部 Agent HTTP 服务示例
+├── external_agents_example.json  # 外部 Agent 配置示例
+├── run_external_api.sh           # 一键启动脚本
+├── pyproject.toml                # Python 依赖声明
+├── .gitignore
+├── LICENSE
+├── oasis/                        # 核心 Python 包
+│   ├── __init__.py
+│   ├── clock/                    # 时钟控制
+│   ├── environment/              # 环境 + ExternalAction
+│   ├── scheduling/               # YAML DSL 编排引擎
+│   ├── social_agent/             # Agent 图谱 + 行为
+│   ├── social_platform/          # 平台 + 推荐系统 + DB schema
+│   └── testing/                  # show_db 工具
+├── oasis-discussion-skill/       # 本 Skill
+│   ├── SKILL.md
+│   ├── assets/templates/         # 讨论模式模板 YAML
+│   ├── references/               # DSL 规范 + 模式参考
+│   └── scripts/                  # 生成脚本
+├── schedules/                    # 编排 YAML 文件
+│   └── agent_schedule.example.yaml
+├── community_viewer/             # 可视化前端（可选）
+│   ├── index.html / app.js / styles.css
+│   ├── export.py / live_server.py
+│   └── data.json
+└── data/                         # 话题数据（--topics-csv 需要，可选）
+```
+
+**已排除**：`docs/`、`examples/`(200+ 原始示例)、`generator/`、`visualization/`、`test/`、`.container/`、`.github/`、`assets/`(宣传素材)、`licenses/`、`deploy.py`、`download_model.sh`、`setup_env.sh` 等。
