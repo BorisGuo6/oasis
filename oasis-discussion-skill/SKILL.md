@@ -16,7 +16,14 @@ Organize and run structured multi-agent discussions on the OASIS platform using 
 
 ## Base Directory
 
-`/data/workspace/oasis`
+The OASIS project root (the directory containing `community_simulation.py`). All paths in this Skill are **relative to the project root**. The Skill itself lives at `oasis-discussion-skill/` under the project root.
+
+Detect the project root at runtime:
+
+```bash
+OASIS_ROOT="$(cd "$(dirname "$0")/.." && pwd)"  # if called from oasis-discussion-skill/scripts/
+# Or simply: cd into the repo root before running commands
+```
 
 ## When to Use
 
@@ -71,7 +78,8 @@ For **external agents** (e.g. TimeBot, custom bots), generate a JSON config file
 Use `scripts/generate_agents_config.py` to generate:
 
 ```bash
-python .codebuddy/skills/oasis-discussion/scripts/generate_agents_config.py \
+# 在项目根目录下运行
+python oasis-discussion-skill/scripts/generate_agents_config.py \
   --roles "主持人,正方辩手,反方辩手,观察员" \
   --output external_agents.json
 ```
@@ -82,17 +90,18 @@ Choose a template from `assets/templates/` based on the discussion pattern:
 
 | Pattern | Template | Description |
 |---------|----------|-------------|
-| `debate` | `assets/templates/debate.yaml` | Moderator + two sides + free debate + summary |
-| `brainstorm` | `assets/templates/brainstorm.yaml` | Parallel ideation → serial deepening → convergence |
-| `roundtable` | `assets/templates/roundtable.yaml` | Host-guided multi-round sequential discussion |
-| `interview` | `assets/templates/interview.yaml` | Interviewer asks, guests answer in turn |
+| `debate` | `oasis-discussion-skill/assets/templates/debate.yaml` | Moderator + two sides + free debate + summary |
+| `brainstorm` | `oasis-discussion-skill/assets/templates/brainstorm.yaml` | Parallel ideation → serial deepening → convergence |
+| `roundtable` | `oasis-discussion-skill/assets/templates/roundtable.yaml` | Host-guided multi-round sequential discussion |
+| `interview` | `oasis-discussion-skill/assets/templates/interview.yaml` | Interviewer asks, guests answer in turn |
 
 Then customize the template based on user requirements. Reference `references/yaml_dsl_spec.md` for the complete YAML DSL syntax.
 
 Use `scripts/generate_schedule.py` to generate from template:
 
 ```bash
-python .codebuddy/skills/oasis-discussion/scripts/generate_schedule.py \
+# 在项目根目录下运行
+python oasis-discussion-skill/scripts/generate_schedule.py \
   --pattern debate \
   --num-agents 6 \
   --rounds 3 \
@@ -102,8 +111,7 @@ python .codebuddy/skills/oasis-discussion/scripts/generate_schedule.py \
 ### Step 4 — Launch Simulation
 
 ```bash
-cd /data/workspace/oasis
-
+# 在项目根目录下运行（cd 到 clone 下来的 oasis 目录）
 python community_simulation.py \
   --num-agents <NUM> \
   --rounds <ROUNDS> \

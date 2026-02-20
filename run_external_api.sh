@@ -33,7 +33,7 @@ LLM_PLATFORM="deepseek"
 MODEL_NAME="deepseek-chat"
 
 # API Key
-API_KEY="${OASIS_API_KEY:-${OPENAI_API_KEY:-YOUR_API_KEY}}"
+API_KEY="${OASIS_API_KEY:-${OPENAI_API_KEY:-sk-0bd008ab3f8a420c8e795142557cadd2}}"
 
 # API URL（可选，不填则使用平台默认地址）
 # 示例:
