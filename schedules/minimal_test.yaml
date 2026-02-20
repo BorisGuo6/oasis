@@ -1,8 +1,0 @@
-# 最小测试：2 Agent 串行对话
-version: 1
-
-plan:
-  # Agent 0 先发言
-  - llm: { agent: 0 }
-  # Agent 1 接着发言（能看到 Agent 0 的帖子）
-  - llm: { agent: 1 }
