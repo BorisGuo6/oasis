@@ -50,6 +50,9 @@ Ask or infer the following from the user:
 | `llm_platform` | LLM platform: `openai` / `deepseek` / `qwen` / `vllm` / `openai-compatible` | `openai-compatible` |
 | `model_name` | Model identifier | (from env) |
 | `api_url` | API endpoint | (from env) |
+| `refresh_rec_post_count` | 每次 refresh 从推荐表采样的帖子数 | Twitter: `2`, Reddit: `5` |
+| `max_rec_post_len` | 推荐表每用户最多缓存的帖子数 | Twitter: `2`, Reddit: `100` |
+| `following_post_count` | 每次 refresh 从关注者获取的帖子数 | Twitter: `3` |
 
 ### Step 2 — Generate Agent Configuration
 
@@ -108,6 +111,82 @@ python oasis-discussion-skill/scripts/generate_schedule.py \
   --output schedules/my_discussion.yaml
 ```
 
+### Step 3.5 — Topic Injection via `manual` (推荐)
+
+在 YAML 编排中使用 `manual` 指令让主持人/主控 Agent 直接发布话题帖，**比 `--initial-post` 更灵活**——可以按轮次设置不同话题，也可以让人类通过编辑 YAML 来精确控制讨论方向。
+
+**基础用法** — 主持人发布话题后，其他 Agent 依次回应：
+
+```yaml
+vars:
+  moderator: 0
+
+plan:
+  # 主持人发布话题
+  - manual:
+      agent: ${vars.moderator}
+      action_type: create_post
+      action_args:
+        content: "今天的讨论话题：AI是否应该拥有自主决策权？请各位发表看法。"
+
+  # 其他 Agent 依次回应（串行，后者能看到前者发言）
+  - for_each:
+      var: id
+      in: "${range(1, num_agents)}"
+    do:
+      - llm:
+          agent: ${id}
+```
+
+**按轮次设置不同话题** — 用 `if` 条件分支：
+
+```yaml
+plan:
+  # 每轮由主持人发布不同话题
+  - if:
+      condition: "round == 1"
+    then:
+      - manual:
+          agent: 0
+          action_type: create_post
+          action_args:
+            content: "第一轮话题：AI的伦理边界在哪里？"
+  - if:
+      condition: "round == 2"
+    then:
+      - manual:
+          agent: 0
+          action_type: create_post
+          action_args:
+            content: "第二轮话题：如何监管AI的使用？"
+  - if:
+      condition: "round == 3"
+    then:
+      - manual:
+          agent: 0
+          action_type: create_post
+          action_args:
+            content: "第三轮话题：AI与人类的协作模式应该是什么？"
+
+  # 每轮所有人回应
+  - for_each:
+      var: id
+      in: "${range(1, num_agents)}"
+    do:
+      - llm:
+          agent: ${id}
+```
+
+**与 `--initial-post` 的区别：**
+
+| 方式 | 灵活度 | 多轮话题 | 适合场景 |
+|------|--------|---------|---------|
+| `manual` in YAML | 最高 | ✅ 每轮可不同 | 结构化讨论、辩论、精确控制 |
+| `--initial-post` | 最简单 | ❌ 仅一条开场帖 | 快速测试 |
+| `--topics-csv` | 批量自动 | ✅ 自动循环投放 | 大规模持续模拟 |
+
+> **最佳实践**: 使用 `manual` 设置话题时，可省略 `--initial-post` 参数或设为空字符串，避免话题重复。
+
 ### Step 4 — Launch Simulation
 
 ```bash
@@ -122,7 +201,10 @@ python community_simulation.py \
   --api-url <URL> \
   --api-key <KEY> \
   [--external-agents-config <JSON_PATH>] \
-  [--temperature 0.7]
+  [--temperature 0.7] \
+  [--refresh-rec-post-count <N>] \
+  [--max-rec-post-len <N>] \
+  [--following-post-count <N>]
 ```
 
 **Key CLI flags:**
@@ -135,6 +217,11 @@ python community_simulation.py \
 | `--rounds` | Yes | Number of discussion rounds |
 | `--initial-post` | Recommended | The discussion topic / opening message |
 | `--platform` | No | `twitter` (default) or `reddit` |
+| `--refresh-rec-post-count` | No | 从推荐表采样帖子数 (Agent 少时建议调大, 如 5~10) |
+| `--max-rec-post-len` | No | 推荐表每人缓存上限 (应 ≥ refresh 值) |
+| `--following-post-count` | No | 关注者帖子数 (Agent 少时建议调大, 如 5~10) |
+
+> **提示**: Agent 数量 ≤5 时，建议设置 `--refresh-rec-post-count 5 --max-rec-post-len 10 --following-post-count 10`，确保每个 Agent 能看到所有已有帖子。
 
 ### Step 5 — Monitor and Summarize
 

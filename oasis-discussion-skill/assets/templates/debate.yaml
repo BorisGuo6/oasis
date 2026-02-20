@@ -15,10 +15,15 @@ vars:
   side_a: [1, 2]
   side_b: [3, 4]
   observer: 5
+  topic: "请在此填写辩论话题"  # ← 修改这里设置话题
 
 plan:
-  # --- Opening: Moderator introduces the topic ---
-  - llm: { agent: "${vars[\"moderator\"]}" }
+  # --- Opening: Moderator posts the debate topic ---
+  - manual:
+      agent: "${vars[\"moderator\"]}"
+      action_type: create_post
+      action_args:
+        content: "【辩论话题】${vars[\"topic\"]}  请正反双方发表观点。"
 
   # --- Round 1: Side A presents arguments (parallel) ---
   - parallel: { agents: "${vars[\"side_a\"]}" }

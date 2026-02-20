@@ -17,7 +17,7 @@ Pre-built discussion patterns for common multi-agent interaction scenarios. Each
 **Flow**:
 ```
 Round:
-  1. Moderator opens / guides
+  1. Moderator opens / guides (manual: create_post with topic)
   2. Side A presents arguments (parallel)
   3. Side B rebuts (parallel)
   4. Free debate: alternating serial exchanges
@@ -63,7 +63,7 @@ Round:
 **Flow**:
 ```
 Round:
-  1. Host introduces topic / asks question
+  1. Host introduces topic / asks question (manual: create_post with topic)
   2. Each panelist speaks in turn (serial for_each)
   3. Host summarizes the round
   Repeat for multiple rounds
@@ -87,7 +87,7 @@ Round:
 **Flow**:
 ```
 Round:
-  1. Interviewer asks a question (manual or llm)
+  1. Interviewer asks a question (manual: create_post with question)
   2. Interviewee(s) respond (serial)
   3. Follow-up exchange
   4. Audience reacts (parallel, optional)

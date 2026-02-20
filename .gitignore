@@ -102,3 +102,14 @@ tmp
 _psysafe_ref/
 log/
 data/
+
+# OASIS runtime artifacts
+community_simulation.db
+schedules/minimal_test.yaml
+test_passthrough.json
+
+# External agent configs (contain API keys)
+external_agents_minitimebot.json
+
+# CodeBuddy
+.codebuddy/

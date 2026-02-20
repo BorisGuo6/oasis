@@ -441,6 +441,12 @@ async def main():
                         default=os.environ.get("OASIS_PLATFORM", "twitter"))
     parser.add_argument("--recsys-type", choices=["random", "twitter", "reddit"],
                         default=os.environ.get("OASIS_RECSYS_TYPE", ""))
+    parser.add_argument("--refresh-rec-post-count", type=int, default=None,
+                        help="每次 refresh 从推荐表采样的帖子数 (Twitter默认2, Reddit默认5)")
+    parser.add_argument("--max-rec-post-len", type=int, default=None,
+                        help="推荐表每用户最多缓存的帖子数 (Twitter默认2, Reddit默认100)")
+    parser.add_argument("--following-post-count", type=int, default=None,
+                        help="每次 refresh 从关注者获取的帖子数 (Twitter默认3)")
     parser.add_argument("--use-simple-roles", action="store_true",
                         default=os.environ.get("OASIS_SIMPLE_ROLES", "") not in ("", "0", "false", "False"))
     parser.add_argument("--personalized-recsys", action="store_true",
@@ -712,23 +718,28 @@ async def main():
 
     channel = Channel()
     if args.platform == "twitter":
+        _refresh = args.refresh_rec_post_count if args.refresh_rec_post_count is not None else 2
+        _max_rec = args.max_rec_post_len if args.max_rec_post_len is not None else 2
+        _follow = args.following_post_count if args.following_post_count is not None else 3
         platform_inst = Platform(
             db_path=db_path,
             channel=channel,
-            recsys_type=recsys_type,       # 使用我们选择的推荐类型
-            refresh_rec_post_count=2,
-            max_rec_post_len=2,
-            following_post_count=3,
+            recsys_type=recsys_type,
+            refresh_rec_post_count=_refresh,
+            max_rec_post_len=_max_rec,
+            following_post_count=_follow,
         )
     else:
+        _refresh = args.refresh_rec_post_count if args.refresh_rec_post_count is not None else 5
+        _max_rec = args.max_rec_post_len if args.max_rec_post_len is not None else 100
         platform_inst = Platform(
             db_path=db_path,
             channel=channel,
             recsys_type=recsys_type,
             allow_self_rating=True,
             show_score=True,
-            max_rec_post_len=100,
-            refresh_rec_post_count=5,
+            max_rec_post_len=_max_rec,
+            refresh_rec_post_count=_refresh,
         )
 
     env = oasis.make(

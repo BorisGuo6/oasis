@@ -12,10 +12,15 @@ vars:
   interviewer: 0
   guests: [1, 2]
   audience: [3, 4]
+  topic: "请在此填写访谈话题"  # ← 修改这里设置话题
 
 plan:
-  # --- Opening: Interviewer introduces ---
-  - llm: { agent: "${vars[\"interviewer\"]}" }
+  # --- Opening: Interviewer introduces the topic ---
+  - manual:
+      agent: "${vars[\"interviewer\"]}"
+      action_type: create_post
+      action_args:
+        content: "【访谈话题】${vars[\"topic\"]}  今天我们邀请了几位嘉宾来深入探讨。"
 
   # --- Interview rounds: Q&A for each guest ---
   - for_each:

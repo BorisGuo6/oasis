@@ -14,10 +14,15 @@ version: 1
 vars:
   host: 0
   sub_rounds: 3
+  topic: "请在此填写讨论话题"  # ← 修改这里设置话题
 
 plan:
-  # --- Host opens the discussion ---
-  - llm: { agent: "${vars[\"host\"]}" }
+  # --- Host opens the discussion with topic ---
+  - manual:
+      agent: "${vars[\"host\"]}"
+      action_type: create_post
+      action_args:
+        content: "【圆桌话题】${vars[\"topic\"]}  欢迎各位嘉宾发表看法。"
 
   # --- Multi-round discussion ---
   - repeat:
