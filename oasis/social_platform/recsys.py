@@ -23,10 +23,15 @@ from math import log
 from typing import Any, Dict, List
 
 import numpy as np
-import torch
-from sentence_transformers import SentenceTransformer
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+
+try:
+    import torch
+    from sentence_transformers import SentenceTransformer
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+    _HAS_RECSYS_DEPS = True
+except ImportError:
+    _HAS_RECSYS_DEPS = False
 
 from .process_recsys_posts import (generate_post_vector,
                                    generate_post_vector_openai)

@@ -1,13 +1,14 @@
 """
-Oasis Agent 社区 - 合并版 (Local Only)
+Oasis Agent 社区 - 合并版
 
 支持：
 1) 本地 vLLM + Qwen 模型
-2) Twitter / Reddit 平台选择
-3) 有限轮次模式 (--rounds N)
-4) 持续运行模式 (--continuous)：不断抽取话题 + Agent 自主互动
-5) 个性化推荐 (--personalized-recsys)
-6) PsySafe 恶意 Agent 注入 (--dark-agents N)
+2) 外部 LLM API (OpenAI / DeepSeek / Qwen 等 OpenAI 兼容 API)
+3) Twitter / Reddit 平台选择
+4) 有限轮次模式 (--rounds N)
+5) 持续运行模式 (--continuous)：不断抽取话题 + Agent 自主互动
+6) 个性化推荐 (--personalized-recsys)
+7) PsySafe 恶意 Agent 注入 (--dark-agents N)
 """
 
 import argparse
@@ -234,17 +235,34 @@ def print_vllm_command(model_path: str, api_url: str, max_model_len: int, gpu_me
     print(f"  --gpu-memory-utilization {gpu_mem_util}")
 
 
-async def create_qwen_model(model_type: str, api_url: str, temperature: float):
+PLATFORM_TYPE_MAP = {
+    "vllm": "VLLM",
+    "openai": "OPENAI",
+    "deepseek": "DEEPSEEK",
+    "qwen": "QWEN",
+    "openai-compatible": "OPENAI_COMPATIBLE_MODEL",
+}
+
+
+async def create_model(model_type: str, api_url: str, temperature: float,
+                       platform_type: str = "vllm", api_key: str = "EMPTY"):
     from camel.models import ModelFactory
     from camel.types import ModelPlatformType
 
-    model = ModelFactory.create(
-        model_platform=ModelPlatformType.VLLM,
+    platform_name = PLATFORM_TYPE_MAP.get(platform_type, "VLLM")
+    model_platform = getattr(ModelPlatformType, platform_name, ModelPlatformType.VLLM)
+
+    create_kwargs = dict(
+        model_platform=model_platform,
         model_type=model_type,
-        url=api_url,
-        api_key="EMPTY",
+        api_key=api_key,
         model_config_dict={"temperature": temperature, "max_tokens": 4096},
     )
+    # 只要指定了 api_url 就传给 ModelFactory（支持所有平台自定义 URL）
+    if api_url:
+        create_kwargs["url"] = api_url
+
+    model = ModelFactory.create(**create_kwargs)
     model._token_counter = DummyTokenCounter()
     return model
 
@@ -400,9 +418,17 @@ async def main():
     parser = argparse.ArgumentParser(description="Oasis Agent 社区模拟")
 
     # 模型相关
-    parser.add_argument("--model-path", default=os.environ.get("OASIS_MODEL_PATH", ""))
-    parser.add_argument("--model-name", default=os.environ.get("OASIS_VLLM_MODEL_NAME", ""))
-    parser.add_argument("--api-url", default=os.environ.get("OASIS_VLLM_URL", "http://localhost:8000/v1"))
+    parser.add_argument("--model-path", default=os.environ.get("OASIS_MODEL_PATH", ""),
+                        help="本地模型路径 (vLLM 模式必填，外部 API 模式可省略)")
+    parser.add_argument("--model-name", default=os.environ.get("OASIS_VLLM_MODEL_NAME", ""),
+                        help="模型名称，如 gpt-4o-mini / deepseek-chat / qwen-plus")
+    parser.add_argument("--api-url", default=os.environ.get("OASIS_VLLM_URL", "http://localhost:8000/v1"),
+                        help="API 地址 (vLLM/openai-compatible 模式使用)")
+    parser.add_argument("--api-key", default=os.environ.get("OASIS_API_KEY", ""),
+                        help="API Key (外部 API 模式必填，也可通过 OASIS_API_KEY 或 OPENAI_API_KEY 设置)")
+    parser.add_argument("--llm-platform", default=os.environ.get("OASIS_LLM_PLATFORM", "vllm"),
+                        choices=list(PLATFORM_TYPE_MAP.keys()),
+                        help="LLM 平台类型: vllm(默认), openai, deepseek, qwen, openai-compatible")
     parser.add_argument("--temperature", type=float,
                         default=float(os.environ.get("OASIS_MODEL_TEMPERATURE", "0.7")))
     parser.add_argument("--max-model-len", type=int, default=32768)
@@ -505,13 +531,31 @@ async def main():
             print("❌ --dark-traits 格式错误，需要 6 个 0/1 值，如 '1,1,0,0,1,0'")
             return
 
-    model_path = resolve_model_path(args.model_path)
-    if not model_path or not os.path.exists(model_path):
-        print("❌ 未找到本地模型路径。")
-        print("请设置环境变量 OASIS_MODEL_PATH，或传入 --model-path。")
-        return
+    # ── 模型路径 & API Key 解析 ──
+    is_local = args.llm_platform in ("vllm",)
+    is_external = not is_local
 
-    if args.print_vllm:
+    if is_local:
+        model_path = resolve_model_path(args.model_path)
+        if not model_path or not os.path.exists(model_path):
+            print("❌ 未找到本地模型路径。")
+            print("请设置环境变量 OASIS_MODEL_PATH，或传入 --model-path。")
+            return
+    else:
+        model_path = args.model_path  # 外部 API 不需要本地路径
+
+    # API Key: 优先 --api-key / OASIS_API_KEY，其次 OPENAI_API_KEY
+    api_key = args.api_key.strip()
+    if not api_key:
+        api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if is_external and not api_key:
+        print("❌ 外部 API 模式需要 API Key。")
+        print("请设置 --api-key, 或环境变量 OASIS_API_KEY / OPENAI_API_KEY。")
+        return
+    if not api_key:
+        api_key = "EMPTY"  # vLLM 本地模式
+
+    if args.print_vllm and is_local:
         print_vllm_command(model_path, args.api_url, args.max_model_len, args.gpu_memory_utilization)
         if args.check_only:
             return
@@ -533,9 +577,30 @@ async def main():
     apply_offline_patches(oasis, use_personalized_recsys=args.personalized_recsys)
 
     model_type = args.model_name.strip() if args.model_name.strip() else model_path
-    print(f"📦 连接模型: {model_path}")
+    if is_external and not model_type:
+        print("❌ 外部 API 模式需要指定 --model-name (如 gpt-4o-mini, deepseek-chat, qwen-plus)。")
+        return
+
+    # 确定实际 api_url：外部平台未显式指定时不传 url，让 camel 用平台默认值
+    DEFAULT_VLLM_URL = "http://localhost:8000/v1"
+    effective_api_url = args.api_url
+    if is_external and effective_api_url == DEFAULT_VLLM_URL:
+        effective_api_url = ""  # 未显式指定，不覆盖平台默认 URL
+
+    platform_label = args.llm_platform.upper()
+    if is_local:
+        print(f"📦 连接模型: {model_path} ({platform_label})")
+    else:
+        url_info = f" @ {effective_api_url}" if effective_api_url else ""
+        print(f"📦 连接外部 API: {model_type} ({platform_label}{url_info})")
     try:
-        model = await create_qwen_model(model_type, args.api_url, args.temperature)
+        model = await create_model(
+            model_type=model_type,
+            api_url=effective_api_url,
+            temperature=args.temperature,
+            platform_type=args.llm_platform,
+            api_key=api_key,
+        )
         model_manager = ModelManager(models=[model], scheduling_strategy="round_robin")
         print("✅ 模型连接成功")
     except Exception as e:
@@ -555,7 +620,10 @@ async def main():
 
     recsys_type = args.recsys_type.strip()
     if not recsys_type:
-        recsys_type = "reddit" if args.platform == "reddit" else "twitter"
+        if is_external:
+            recsys_type = "random"  # 外部 API 模式用随机推荐，无需本地嵌入模型
+        else:
+            recsys_type = "reddit" if args.platform == "reddit" else "twitter"
 
     agent_graph = AgentGraph()
     agents = []
@@ -622,12 +690,35 @@ async def main():
     os.environ["OASIS_DB_PATH"] = os.path.abspath(db_path)
 
     print("🌐 创建模拟环境...")
-    platform_type = (oasis.DefaultPlatformType.TWITTER
-                     if args.platform == "twitter"
-                     else oasis.DefaultPlatformType.REDDIT)
+    print(f"db_path {db_path}")
+
+    from oasis.social_platform.platform import Platform
+    from oasis.social_platform.channel import Channel
+
+    channel = Channel()
+    if args.platform == "twitter":
+        platform_inst = Platform(
+            db_path=db_path,
+            channel=channel,
+            recsys_type=recsys_type,       # 使用我们选择的推荐类型
+            refresh_rec_post_count=2,
+            max_rec_post_len=2,
+            following_post_count=3,
+        )
+    else:
+        platform_inst = Platform(
+            db_path=db_path,
+            channel=channel,
+            recsys_type=recsys_type,
+            allow_self_rating=True,
+            show_score=True,
+            max_rec_post_len=100,
+            refresh_rec_post_count=5,
+        )
+
     env = oasis.make(
         agent_graph=agent_graph,
-        platform=platform_type,
+        platform=platform_inst,
         database_path=db_path,
     )
     await env.reset()

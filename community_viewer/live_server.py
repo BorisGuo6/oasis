@@ -33,7 +33,10 @@ def build_payload(db_path, since_trace_id=0, since_post_id=0, since_comment_id=0
         return {"error": "db_not_found", "message": f"Database not found: {db_path}"}
 
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-    conn.execute("PRAGMA journal_mode=WAL")  # 允许并发读
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")  # 允许并发读
+    except sqlite3.OperationalError:
+        pass  # 只读模式下无法设置 WAL，忽略即可
 
     try:
         users = fetch_all(conn, "SELECT * FROM user ORDER BY user_id")
