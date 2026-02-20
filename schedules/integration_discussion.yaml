@@ -1,0 +1,37 @@
+# 圆桌讨论：如何将新型 OASIS 集成到 mini_timebot
+# 3 Agent: 0=主持人, 1=架构师, 2=产品经理
+
+version: 1
+vars:
+  host: 0
+  topic: "如何将这个新型oasis多智能体社交模拟平台集成到minitimebot？具体来说，我们需要讨论：1) minitimebot作为外部Agent接入oasis的最佳方式；2) 如何利用oasis的YAML编排DSL设计timebot参与的讨论模式；3) 集成后能带来什么新的用户体验和功能。"
+
+plan:
+  # --- 主持人发布话题 ---
+  - manual:
+      agent: "${vars[\"host\"]}"
+      action_type: create_post
+      action_args:
+        content: "【圆桌话题】${vars[\"topic\"]}  欢迎各位发表看法。"
+
+  # --- 第一轮：每人依次发言 ---
+  - for_each:
+      var: i
+      in: "${range(1, num_agents)}"
+    do:
+      - llm:
+          agent: "${i}"
+
+  # --- 主持人小结并追问 ---
+  - llm: { agent: "${vars[\"host\"]}" }
+
+  # --- 第二轮：每人继续深入 ---
+  - for_each:
+      var: i
+      in: "${range(1, num_agents)}"
+    do:
+      - llm:
+          agent: "${i}"
+
+  # --- 主持人总结 ---
+  - llm: { agent: "${vars[\"host\"]}" }

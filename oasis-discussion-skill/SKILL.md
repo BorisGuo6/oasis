@@ -185,7 +185,7 @@ plan:
 | `--initial-post` | 最简单 | ❌ 仅一条开场帖 | 快速测试 |
 | `--topics-csv` | 批量自动 | ✅ 自动循环投放 | 大规模持续模拟 |
 
-> **最佳实践**: 使用 `manual` 设置话题时，可省略 `--initial-post` 参数或设为空字符串，避免话题重复。
+> **最佳实践**: 使用 `manual` 设置话题时，**必须**加 `--topics-num 0` 关闭 CSV 话题注入，可省略 `--initial-post` 参数或设为空字符串，避免无关话题干扰讨论焦点。
 
 ### Step 4 — Launch Simulation
 
@@ -200,6 +200,7 @@ python community_simulation.py \
   --model-name <MODEL> \
   --api-url <URL> \
   --api-key <KEY> \
+  --topics-num 0 \
   [--external-agents-config <JSON_PATH>] \
   [--temperature 0.7] \
   [--refresh-rec-post-count <N>] \
@@ -217,9 +218,12 @@ python community_simulation.py \
 | `--rounds` | Yes | Number of discussion rounds |
 | `--initial-post` | Recommended | The discussion topic / opening message |
 | `--platform` | No | `twitter` (default) or `reddit` |
+| `--topics-num` | **默认 `0`** | **关闭 CSV 无关话题注入**，避免干扰讨论焦点。如需额外话题可设为 >0 |
 | `--refresh-rec-post-count` | No | 从推荐表采样帖子数 (Agent 少时建议调大, 如 5~10) |
 | `--max-rec-post-len` | No | 推荐表每人缓存上限 (应 ≥ refresh 值) |
 | `--following-post-count` | No | 关注者帖子数 (Agent 少时建议调大, 如 5~10) |
+
+> **重要**: 默认使用 `--topics-num 0` 关闭 CSV 话题注入。OASIS 内置的 CSV 话题（新闻、热搜等）会严重干扰结构化讨论的焦点。话题应通过 YAML `manual` 指令或 `--initial-post` 来设置。
 
 > **提示**: Agent 数量 ≤5 时，建议设置 `--refresh-rec-post-count 5 --max-rec-post-len 10 --following-post-count 10`，确保每个 Agent 能看到所有已有帖子。
 
