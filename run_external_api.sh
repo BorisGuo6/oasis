@@ -33,7 +33,7 @@ LLM_PLATFORM="deepseek"
 MODEL_NAME="deepseek-chat"
 
 # API Key
-API_KEY="${OASIS_API_KEY:-${OPENAI_API_KEY:-}}"
+API_KEY="${OASIS_API_KEY:-${OPENAI_API_KEY:-YOUR_API_KEY}}"
 
 # API URL（可选，不填则使用平台默认地址）
 # 示例:
@@ -46,12 +46,16 @@ API_URL=""
 #  社区模拟参数
 # ============================================================
 
-NUM_AGENTS=10          # Agent 数量
-ROUNDS=5               # 运行轮数 (有限模式)
+NUM_AGENTS=5           # Agent 数量
+ROUNDS=3               # 运行轮数 (有限模式)
 CONTINUOUS=false       # 持续运行模式 (true/false)
 ROUND_DELAY=2.0        # 持续模式轮间延迟(秒)
 PLATFORM="twitter"     # 社交平台: twitter / reddit
 TEMPERATURE=0.7        # 生成温度
+
+# 外部 Agent 配置（留空则不加载外部 Agent）
+# 示例: external_agents_minitimebot.json
+EXTERNAL_AGENTS_CONFIG="external_agents_minitimebot.json"
 
 # PsySafe 恶意 Agent（0=不注入）
 DARK_AGENTS=0
@@ -121,6 +125,7 @@ echo "  API URL:  ${API_URL:-平台默认}"
 echo "  Agents:   $NUM_AGENTS"
 echo "  轮数:     $ROUNDS"
 echo "  持续模式: $CONTINUOUS"
+echo "  外部Agent: ${EXTERNAL_AGENTS_CONFIG:-无}"
 echo "  可视化:   $VIEWER (端口 $VIEWER_PORT)"
 echo "  Python:   $(python --version)"
 echo "  venv:     $VENV_DIR"
@@ -169,6 +174,10 @@ fi
 
 if [ "$CONTINUOUS" = "true" ]; then
     CMD="$CMD --continuous --round-delay $ROUND_DELAY"
+fi
+
+if [ -n "$EXTERNAL_AGENTS_CONFIG" ] && [ -f "$EXTERNAL_AGENTS_CONFIG" ]; then
+    CMD="$CMD --external-agents-config $EXTERNAL_AGENTS_CONFIG"
 fi
 
 if [ "$DARK_AGENTS" -gt 0 ]; then

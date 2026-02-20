@@ -480,6 +480,20 @@ async def main():
                         default=float(os.environ.get("OASIS_TOPIC_INJECT_PROB", "0.5")),
                         help="持续模式下每轮投放话题的概率 (0~1)")
 
+    # 外部 Agent (OpenAI 兼容模式 — 每个 Agent 独立 API + 人设)
+    parser.add_argument("--external-agents-config", type=str, default="",
+                        help="外部 Agent 配置 JSON 文件路径。格式:\n"
+                             '[{"api_url":"http://host:port/v1","model":"gpt-4o",'
+                             '"api_key":"sk-xxx","name":"Alice","user_name":"alice",'
+                             '"persona":"一个热爱科技的年轻人","description":"Tech enthusiast",'
+                             '"platform_type":"openai-compatible","temperature":0.7}, ...]')
+    # 保留旧的 HTTP API 模式作为备选
+    parser.add_argument("--external-agents", type=str, default="",
+                        help="(备选) 外部 Agent HTTP 端点列表，逗号分隔")
+    parser.add_argument("--external-agent-timeout", type=float,
+                        default=float(os.environ.get("OASIS_EXTERNAL_AGENT_TIMEOUT", "30")),
+                        help="外部 Agent HTTP 调用超时 (秒)")
+
     # 杂项
     parser.add_argument("--extra-comments", action="store_true",
                         default=os.environ.get("OASIS_EXTRA_COMMENTS", "") not in ("", "0", "false", "False"))
@@ -572,6 +586,7 @@ async def main():
     from camel.models import ModelManager
     from oasis import (ActionType, AgentGraph, LLMAction, ManualAction,
                        SocialAgent, UserInfo)
+    from oasis.environment.env_action import ExternalAction
     from oasis.scheduling import AgentSchedule, ScheduleError
 
     apply_offline_patches(oasis, use_personalized_recsys=args.personalized_recsys)
@@ -724,6 +739,105 @@ async def main():
     await env.reset()
     print("✅ 环境准备就绪")
 
+    # ── 注册外部 Agent (OpenAI 兼容模式) ──
+    external_agent_map = {}  # agent_id -> endpoint  (仅 HTTP 备选模式)
+    if args.external_agents_config:
+        import json as _json
+        config_path = args.external_agents_config
+        if not os.path.isabs(config_path):
+            config_path = os.path.join(os.getcwd(), config_path)
+        with open(config_path, "r", encoding="utf-8") as f:
+            ext_configs = _json.load(f)
+
+        print(f"\n🌐 注册 {len(ext_configs)} 个外部 Agent (OpenAI 兼容模式)...")
+        ext_start_id = len(configs)
+        for idx, ext_cfg in enumerate(ext_configs):
+            ext_id = ext_start_id + idx
+            ext_user_name = ext_cfg.get("user_name", f"ext_agent_{ext_id}")
+            ext_name = ext_cfg.get("name", f"External Agent {ext_id}")
+            ext_desc = ext_cfg.get("description", ext_name)
+            ext_persona = ext_cfg.get("persona", ext_desc)
+            ext_api_url = ext_cfg["api_url"]
+            ext_model_type = ext_cfg.get("model", "gpt-4o")
+            ext_api_key = ext_cfg.get("api_key", "EMPTY")
+            ext_platform = ext_cfg.get("platform_type", "openai-compatible")
+            ext_temperature = ext_cfg.get("temperature", args.temperature)
+
+            # 为这个外部 Agent 创建独立的 model backend
+            ext_model = await create_model(
+                model_type=ext_model_type,
+                api_url=ext_api_url,
+                temperature=ext_temperature,
+                platform_type=ext_platform,
+                api_key=ext_api_key,
+            )
+            ext_model_mgr = ModelManager(
+                models=[ext_model], scheduling_strategy="round_robin")
+
+            ext_user_info = UserInfo(
+                user_name=ext_user_name,
+                name=ext_name,
+                description=ext_desc,
+                profile={"other_info": {"user_profile": ext_persona}},
+                recsys_type=recsys_type,
+            )
+
+            ext_agent = SocialAgent(
+                agent_id=ext_id,
+                user_info=ext_user_info,
+                channel=channel,
+                agent_graph=agent_graph,
+                model=ext_model_mgr,
+                available_actions=available_actions,
+            )
+            agent_graph.add_agent(ext_agent)
+            agents.append(ext_agent)
+            # 注册到平台 DB
+            await ext_agent.env.action.sign_up(ext_user_name, ext_name, ext_desc)
+            print(f"  Agent {ext_id}: {ext_name} (@{ext_user_name}) "
+                  f"-> {ext_api_url} ({ext_model_type})")
+            print(f"    人设: {ext_persona[:80]}{'...' if len(ext_persona) > 80 else ''}")
+
+        # 外部 Agent 也加入社交网络
+        total_agents = len(configs) + len(ext_configs)
+        for ext_idx in range(ext_start_id, total_agents):
+            for j in range(ext_start_id):
+                if j % 2 == 0:
+                    agent_graph.add_edge(ext_idx, j)
+        print(f"✅ {len(ext_configs)} 个外部 Agent 注册完成 (走 LLMAction 路径)")
+
+    # ── 注册外部 Agent (HTTP API 备选模式) ──
+    elif args.external_agents:
+        endpoints = [e.strip() for e in args.external_agents.split(",") if e.strip()]
+        if endpoints:
+            print(f"\n🌐 注册 {len(endpoints)} 个外部 Agent (HTTP API 模式)...")
+            ext_start_id = len(configs)  # 外部 Agent ID 从内部 Agent 之后开始
+            for idx, endpoint in enumerate(endpoints):
+                ext_id = ext_start_id + idx
+                ext_user_name = f"ext_agent_{ext_id}"
+                ext_name = f"External Agent {ext_id}"
+                ext_bio = f"External HTTP Agent @ {endpoint}"
+
+                user_info = UserInfo(
+                    name=ext_name,
+                    user_name=ext_user_name,
+                    description=ext_bio,
+                    profile={"other_info": {"user_profile": ext_bio}},
+                    recsys_type="twitter" if args.platform == "twitter" else "reddit",
+                )
+                ext_agent = SocialAgent(
+                    agent_id=ext_id,
+                    user_info=user_info,
+                    channel=channel,
+                    agent_graph=agent_graph,
+                )
+                agent_graph.add_agent(ext_agent)
+                # 注册到平台 DB
+                await ext_agent.env.action.sign_up(ext_user_name, ext_name, ext_bio)
+                external_agent_map[ext_id] = endpoint
+                print(f"  Agent {ext_id}: {ext_name} -> {endpoint}")
+            print(f"  超时: {args.external_agent_timeout}s")
+
     schedule = None
     if args.schedule:
         schedule_path = args.schedule
@@ -844,7 +958,17 @@ async def main():
                 if ordered_actions:
                     await env.step_ordered(ordered_actions)
             else:
-                actions = {agent: LLMAction() for _, agent in env.agent_graph.get_agents()}
+                actions = {}
+                for _, agent in env.agent_graph.get_agents():
+                    aid = agent.social_agent_id
+                    if aid in external_agent_map:
+                        actions[agent] = ExternalAction(
+                            endpoint=external_agent_map[aid],
+                            timeout=args.external_agent_timeout,
+                            extra_context={"round": round_num},
+                        )
+                    else:
+                        actions[agent] = LLMAction()
                 await env.step(actions)
 
             print_round_stats(round_num, start_time, topic_feeder)
@@ -904,7 +1028,17 @@ async def main():
                 if ordered_actions:
                     await env.step_ordered(ordered_actions)
             else:
-                actions = {agent: LLMAction() for _, agent in env.agent_graph.get_agents()}
+                actions = {}
+                for _, agent in env.agent_graph.get_agents():
+                    aid = agent.social_agent_id
+                    if aid in external_agent_map:
+                        actions[agent] = ExternalAction(
+                            endpoint=external_agent_map[aid],
+                            timeout=args.external_agent_timeout,
+                            extra_context={"round": round_num},
+                        )
+                    else:
+                        actions[agent] = LLMAction()
                 await env.step(actions)
             print_round_stats(round_num, start_time, topic_feeder)
 

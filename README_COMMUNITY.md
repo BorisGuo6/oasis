@@ -136,6 +136,140 @@ python community_simulation.py --rounds 5 --schedule schedules/agent_schedule.ex
 - `for_each`: 循环列表或 range。
 - `repeat`: 重复执行。
 
+## 外部 Agent 接入
+
+支持将你自己的 LLM 服务（或任何兼容 OpenAI API 的服务）作为外部 Agent 接入社区。每个外部 Agent 拥有独立的 API 端点、模型、人设，走和内部 Agent **完全一样**的 function calling 路径。
+
+### 工作原理
+
+外部 Agent 和内部 Agent 完全对等，每轮的交互流程：
+
+```
+Platform 构建请求:
+  ┌─ system prompt (人设)
+  ├─ user message  (帖子快照 + 粉丝数 + 群组信息)
+  └─ tools         (like_post, create_post, create_comment, follow, ...)
+        ↓
+    发送到你的 API (OpenAI /v1/chat/completions 格式)
+        ↓
+    你的 API 返回 tool_calls
+        ↓
+    Camel 框架自动执行 → Channel → Platform → DB
+```
+
+**每轮都是无状态的**——和内部 LLM Agent 一样，每轮 `self.reset()` 清空 memory，没有历史对话记忆。Agent 之前的操作（发帖、点赞等）通过改变 DB 状态间接影响下一轮推荐。
+
+### 配置文件格式
+
+创建 JSON 配置文件（如 `external_agents_config.json`）：
+
+```json
+[
+    {
+        "api_url": "http://localhost:8001/v1",
+        "model": "gpt-4o",
+        "api_key": "sk-your-key-1",
+        "platform_type": "openai-compatible",
+        "temperature": 0.7,
+        "name": "Alice Chen",
+        "user_name": "alice_chen",
+        "description": "Tech enthusiast and AI researcher",
+        "persona": "你是 Alice Chen，一个热爱科技的年轻 AI 研究员。你经常分享关于机器学习的见解，喜欢用通俗易懂的语言解释复杂概念。"
+    },
+    {
+        "api_url": "http://localhost:8002/v1",
+        "model": "deepseek-chat",
+        "api_key": "sk-your-key-2",
+        "platform_type": "openai-compatible",
+        "temperature": 0.9,
+        "name": "Bob Wang",
+        "user_name": "bob_wang",
+        "description": "Social media influencer",
+        "persona": "你是 Bob Wang，一个社交媒体意见领袖。你善于制造话题、引发讨论，风格幽默大胆。"
+    }
+]
+```
+
+#### 配置字段说明
+
+| 字段 | 必填 | 默认值 | 说明 |
+|------|------|--------|------|
+| `api_url` | ✅ | - | OpenAI 兼容 API 地址（须含 `/v1`） |
+| `model` | 否 | `gpt-4o` | 模型名称 |
+| `api_key` | 否 | `EMPTY` | API Key |
+| `platform_type` | 否 | `openai-compatible` | 平台类型（`openai-compatible` / `openai`） |
+| `temperature` | 否 | 与 `--temperature` 一致 | 生成温度 |
+| `name` | 否 | `External Agent {id}` | 显示名 |
+| `user_name` | 否 | `ext_agent_{id}` | 用户名 |
+| `description` | 否 | 同 `name` | 个人简介 |
+| `persona` | 否 | 同 `description` | 人设描述（会嵌入 system prompt） |
+
+### 人设机制
+
+`persona` 字段最终会嵌入 LLM 的 system prompt，格式与内部 Agent 完全一致：
+
+```
+# OBJECTIVE
+You're a Twitter user, and I'll present you with some posts.
+After you see the posts, choose some actions from the following functions.
+
+# SELF-DESCRIPTION
+Your actions should be consistent with your self-description and personality.
+Your name is Alice Chen.
+Your have profile: 你是 Alice Chen，一个热爱科技的年轻 AI 研究员...
+
+# RESPONSE METHOD
+Please perform actions by tool calling.
+```
+
+### 每轮输入（内部 & 外部完全对等）
+
+| 信息 | 来源 | 说明 |
+|------|------|------|
+| 推荐帖子列表（含评论） | `refresh()` | 推荐系统从 DB 选出的帖子 |
+| 粉丝数 | DB | `num_followers` |
+| 关注数 | DB | `num_followings` |
+| 群组/消息 | `listen_from_group()` | 加入的群组和消息 |
+| 历史看过的帖子 | ❌ 没有 | 每轮无状态 |
+
+### 运行方式
+
+```bash
+# 10 个内部 Agent + 外部 Agent
+python community_simulation.py \
+  --rounds 5 \
+  --external-agents-config external_agents_config.json
+
+# 搭配其他参数
+python community_simulation.py \
+  --rounds 10 \
+  --num-agents 20 \
+  --external-agents-config external_agents_config.json \
+  --personalized-recsys \
+  --topic-inject-prob 0.8
+```
+
+### 外部 API 要求
+
+你的 API 只需兼容 OpenAI `/v1/chat/completions` 接口并支持 **function calling**（即能接收 `tools` 参数、返回 `tool_calls`）。以下服务均可直接使用：
+
+- **vLLM**：`--enable-auto-tool-choice --tool-call-parser hermes`
+- **Ollama**：原生支持
+- **LiteLLM**：代理各种模型
+- **OpenAI / Azure OpenAI**：原生支持
+- **自定义 wrapper**：只要返回标准 OpenAI 格式即可
+
+### 备选方案：HTTP API 模式
+
+如果外部 Agent 不是 LLM（例如规则引擎、RL 模型），可以使用旧的 HTTP API 模式：
+
+```bash
+python community_simulation.py --rounds 5 \
+  --external-agents http://localhost:5001/act,http://localhost:5002/act
+```
+
+HTTP 模式下，外部 Agent 收到 JSON payload（含 feed、粉丝数、群组等），返回 `{"actions": [{"action": "like_post", "args": {"post_id": 3}}]}`。详见 `example_external_agent.py`。
+
 ## PsySafe 恶意 Agent 注入
 
 基于 PsySafe (arXiv:2401.11880) 的道德基础理论 (Moral Foundations Theory)，通过多层次机制向社区注入具有"黑暗人格特质"的恶意 Agent。
@@ -224,6 +358,9 @@ tail -f log/community-*.log
 | `--schedule` | (无) | Agent 发言顺序脚本（YAML），按顺序执行指定 Agent |
 | `--topic-inject-prob` | 0.5 | 每轮投放话题概率 |
 | `--topics-per-round` | 1 | 每轮投放话题数 |
+| `--external-agents-config` | (无) | 外部 Agent JSON 配置文件路径（OpenAI 兼容模式） |
+| `--external-agents` | (无) | (备选) 外部 Agent HTTP 端点列表，逗号分隔 |
+| `--external-agent-timeout` | 30 | 外部 Agent HTTP 调用超时 (秒) |
 | `--personalized-recsys` | off | 本地 embedding 个性化推荐 |
 | `--use-simple-roles` | off | 简单角色描述 |
 | `--extra-comments` | off | 初始额外评论 |

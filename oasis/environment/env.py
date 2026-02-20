@@ -12,12 +12,15 @@
 # limitations under the License.
 # =========== Copyright 2023 @ CAMEL-AI.org. All Rights Reserved. ===========
 import asyncio
+import json
 import logging
 import os
 from datetime import datetime
-from typing import List, Union
+from typing import Any, Dict, List, Union
 
-from oasis.environment.env_action import LLMAction, ManualAction
+import aiohttp
+
+from oasis.environment.env_action import ExternalAction, LLMAction, ManualAction
 from oasis.social_agent.agent import SocialAgent
 from oasis.social_agent.agent_graph import AgentGraph
 from oasis.social_agent.agents_generator import generate_custom_agents
@@ -133,6 +136,130 @@ class OasisEnv:
         async with self.llm_semaphore:
             return await agent.perform_interview(interview_prompt)
 
+    async def _perform_external_action(
+        self, agent: SocialAgent, ext_action: ExternalAction,
+    ) -> Any:
+        r"""HTTP-call an external agent's endpoint, then execute the returned
+        action(s) on behalf of *agent*.
+
+        The external endpoint receives a JSON payload containing the **same
+        information** the internal LLM agent sees each round (feed, followers,
+        follows, groups).  The internal LLM agent is also stateless — it
+        calls ``self.reset()`` every round, so there is no memory of
+        previously seen posts.
+
+        Payload::
+
+            {
+                "agent_id": <int>,
+                "user_name": "<str>",
+                "name": "<str>",
+                "feed": { ... },          # refresh() — recommended posts
+                "num_followers": <int>,
+                "num_followings": <int>,
+                "groups": { ... },        # group channels / messages
+                "round": <int>,           # from extra_context
+                ...
+            }
+
+        And should return::
+
+            {
+                "actions": [
+                    {"action": "create_post", "args": {"content": "Hello"}},
+                    {"action": "like_post",   "args": {"post_id": 1}},
+                    ...
+                ]
+            }
+
+        If the external agent returns an empty list or ``do_nothing``, one
+        ``do_nothing`` is executed.  On timeout / error the agent also does
+        nothing.
+        """
+        aid = agent.social_agent_id
+
+        # 1. Gather the full env snapshot (same info as internal LLM agent)
+        try:
+            feed = await agent.env.action.refresh()
+        except Exception:
+            feed = {"success": False, "posts": []}
+
+        # Followers / followings count (mirrors get_followers_env / get_follows_env)
+        try:
+            followers_text = await agent.env.get_followers_env()
+            follows_text = await agent.env.get_follows_env()
+            # Parse the numbers back out
+            import re
+            m_followers = re.search(r"(\d+)", followers_text)
+            m_follows = re.search(r"(\d+)", follows_text)
+            num_followers = int(m_followers.group(1)) if m_followers else 0
+            num_followings = int(m_follows.group(1)) if m_follows else 0
+        except Exception:
+            num_followers = 0
+            num_followings = 0
+
+        # Group info
+        try:
+            groups = await agent.env.action.listen_from_group()
+            if not groups.get("success"):
+                groups = {}
+        except Exception:
+            groups = {}
+
+        payload = {
+            "agent_id": aid,
+            "user_name": getattr(agent.user_info, "user_name", None),
+            "name": getattr(agent.user_info, "name", None),
+            "feed": feed,
+            "num_followers": num_followers,
+            "num_followings": num_followings,
+            "groups": groups,
+            **ext_action.extra_context,
+        }
+
+        # 2. HTTP call
+        returned_actions: List[Dict[str, Any]] = []
+        try:
+            timeout = aiohttp.ClientTimeout(total=ext_action.timeout)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(
+                    ext_action.endpoint,
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                ) as resp:
+                    if resp.status == 200:
+                        body = await resp.json()
+                        returned_actions = body.get("actions", [])
+                    else:
+                        env_log.warning(
+                            f"External agent {aid} returned HTTP {resp.status}")
+        except asyncio.TimeoutError:
+            env_log.warning(
+                f"External agent {aid} timed out ({ext_action.timeout}s)")
+        except Exception as e:
+            env_log.warning(f"External agent {aid} HTTP error: {e}")
+
+        # 3. Execute the returned actions
+        if not returned_actions:
+            await agent.env.action.do_nothing()
+            return
+
+        results = []
+        for act_spec in returned_actions:
+            action_name = act_spec.get("action", "do_nothing")
+            action_args = act_spec.get("args", {})
+            try:
+                result = await agent.perform_action_by_data(
+                    action_name, **action_args)
+                results.append(result)
+                env_log.info(
+                    f"External agent {aid}: {action_name}({action_args}) "
+                    f"-> {result}")
+            except Exception as e:
+                env_log.error(
+                    f"External agent {aid}: {action_name} failed: {e}")
+        return results
+
     async def _execute_action(self, agent, action):
         if isinstance(action, ManualAction):
             if action.action_type == ActionType.INTERVIEW:
@@ -143,20 +270,22 @@ class OasisEnv:
                 action.action_type, **action.action_args)
         if isinstance(action, LLMAction):
             return await self._perform_llm_action(agent)
+        if isinstance(action, ExternalAction):
+            return await self._perform_external_action(agent, action)
         return None
 
     async def step(
         self, actions: dict[SocialAgent, Union[ManualAction, LLMAction,
+                                               ExternalAction,
                                                List[Union[ManualAction,
-                                                          LLMAction]]]]
+                                                          LLMAction,
+                                                          ExternalAction]]]]
     ) -> None:
         r"""Update the recommendation system and perform the actions.
 
         Args:
-            actions(dict[SocialAgent, Union[ManualAction, LLMAction,
-                List[Union[ManualAction, LLMAction]]]]): The actions to
-                perform, including the manual(pre-defined) actions and llm
-                actions.
+            actions: The actions to perform, including ManualAction,
+                LLMAction, or ExternalAction (HTTP-called external agent).
         Returns:
             None
         """
@@ -164,15 +293,13 @@ class OasisEnv:
         await self.platform.update_rec_table()
         env_log.info("update rec table.")
 
-        # Create tasks for both manual and LLM actions
+        # Create tasks for both manual, LLM, and external actions
         tasks = []
         for agent, action in actions.items():
             if isinstance(action, list):
                 for single_action in action:
                     if isinstance(single_action, ManualAction):
                         if single_action.action_type == ActionType.INTERVIEW:
-                            # Use the agent's perform_interview method for
-                            # interview actions
                             interview_prompt = single_action.action_args.get(
                                 "prompt", "")
                             tasks.append(
@@ -185,11 +312,12 @@ class OasisEnv:
                                     **single_action.action_args))
                     elif isinstance(single_action, LLMAction):
                         tasks.append(self._perform_llm_action(agent))
+                    elif isinstance(single_action, ExternalAction):
+                        tasks.append(
+                            self._perform_external_action(agent, single_action))
             else:
                 if isinstance(action, ManualAction):
                     if action.action_type == ActionType.INTERVIEW:
-                        # Use the agent's perform_interview method for
-                        # interview actions
                         interview_prompt = action.action_args.get("prompt", "")
                         tasks.append(
                             self._perform_interview_action(
@@ -200,11 +328,13 @@ class OasisEnv:
                                 action.action_type, **action.action_args))
                 elif isinstance(action, LLMAction):
                     tasks.append(self._perform_llm_action(agent))
+                elif isinstance(action, ExternalAction):
+                    tasks.append(
+                        self._perform_external_action(agent, action))
 
         # Execute all tasks concurrently
         await asyncio.gather(*tasks)
         env_log.info("performed all actions.")
-        # # Control some agents to perform actions
         # Update the clock
         if self.platform_type == DefaultPlatformType.TWITTER:
             self.platform.sandbox_clock.time_step += 1
@@ -212,8 +342,10 @@ class OasisEnv:
     async def step_ordered(
         self,
         ordered_actions: List[tuple[SocialAgent, Union[ManualAction, LLMAction,
+                                                      ExternalAction,
                                                       List[Union[ManualAction,
-                                                                 LLMAction]]]]],
+                                                                 LLMAction,
+                                                                 ExternalAction]]]]],
     ) -> None:
         r"""Perform actions sequentially in the given order.
 

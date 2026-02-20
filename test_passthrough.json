@@ -1,0 +1,11 @@
+{
+  "model": "mini-timebot",
+  "messages": [
+    {"role": "system", "content": "You are a Twitter user. Your name is TimeBot. You should perform social actions by calling the available tools."},
+    {"role": "user", "content": "Here are some posts on your feed:\n1. Post by Alice (post_id=1): AI is changing the world!\n2. Post by Bob (post_id=2): Just had great coffee.\n\nYour followers: 5, Following: 3.\nPlease perform social media actions."}
+  ],
+  "tools": [
+    {"type": "function", "function": {"name": "create_post", "description": "Create a new post", "parameters": {"type": "object", "properties": {"content": {"type": "string", "description": "Post content"}}, "required": ["content"]}}},
+    {"type": "function", "function": {"name": "like_post", "description": "Like a post", "parameters": {"type": "object", "properties": {"post_id": {"type": "string", "description": "ID of the post to like"}}, "required": ["post_id"]}}}
+  ]
+}

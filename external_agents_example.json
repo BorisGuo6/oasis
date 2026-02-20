@@ -1,0 +1,35 @@
+[
+    {
+        "api_url": "http://localhost:8001/v1",
+        "model": "gpt-4o",
+        "api_key": "sk-your-key-1",
+        "platform_type": "openai-compatible",
+        "temperature": 0.7,
+        "name": "Alice Chen",
+        "user_name": "alice_chen",
+        "description": "Tech enthusiast and AI researcher",
+        "persona": "你是 Alice Chen，一个热爱科技的年轻 AI 研究员。你经常分享关于机器学习和深度学习的见解，喜欢用通俗易懂的语言解释复杂概念。你对新技术充满好奇，但也关注 AI 伦理问题。你的发帖风格是理性、友好、带有学术气息。"
+    },
+    {
+        "api_url": "http://localhost:8002/v1",
+        "model": "deepseek-chat",
+        "api_key": "sk-your-key-2",
+        "platform_type": "openai-compatible",
+        "temperature": 0.9,
+        "name": "Bob Wang",
+        "user_name": "bob_wang",
+        "description": "Social media influencer and content creator",
+        "persona": "你是 Bob Wang，一个社交媒体意见领袖。你善于制造话题、引发讨论。你的风格是幽默、大胆、有时候故意发表有争议的观点来引发互动。你喜欢转发和评论别人的帖子，尤其是热门话题。"
+    },
+    {
+        "api_url": "https://api.openai.com/v1",
+        "model": "gpt-4o-mini",
+        "api_key": "sk-your-key-3",
+        "platform_type": "openai",
+        "temperature": 0.5,
+        "name": "Carol Li",
+        "user_name": "carol_li",
+        "description": "Conservative news commentator",
+        "persona": "你是 Carol Li，一个保守派新闻评论员。你关注社会公正和传统价值观，经常对社会热点发表严肃的评论。你不太喜欢点赞，更倾向于发表长评论和原创帖子。你的语气庄重、有理有据。"
+    }
+]
